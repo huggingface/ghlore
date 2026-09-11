@@ -1,8 +1,9 @@
 # Worked examples
 
-Setup, install and token wiring are in the [README](../README.md#quickstart); the *why* is
-in the build plan, which is held with the deployment that commissioned it. This page is neither — it is what the queries actually
-look like, and the four ways they come back empty when the index is healthy.
+Setup, install and token wiring are in [`operations.md`](operations.md); the *why* is in the
+build plan, which is held with the deployment that commissioned it. This page is neither —
+it is what the queries actually look like, and the four ways they come back empty when the
+index is healthy.
 
 Every command below was run against a real index of `huggingface/serge`: 114 threads, 415
 documents, Postgres backend.
@@ -11,6 +12,25 @@ documents, Postgres backend.
 envelope, and inside it the quoted lines — a title, a snippet, a body — each carry a `>`
 so that our counts and trust tiers cannot be mistaken for something a stranger wrote. The
 blocks below drop both, to keep the shape of the answer readable.
+
+---
+
+## The verbs
+
+| | |
+| --- | --- |
+| `search QUERY` | the index. Filters: `--error`, `--test`, `--file`, `--symbol`, `--label` (repeatable, ANDed with the text); `--kind failure\|precedent\|rationale`; `--trust authoritative\|machine`; `--repo`, `--since`, `--limit`, `--sort newest`, `--no-expand` |
+| `thread N` | one thread. `--focus "…"` orders its comments and never empties them; `--full` serves the opening post whole, reproduction included |
+| `inflight N` | is somebody already fixing this? Threads claiming to close `N`, open ones first |
+| `status` | counts, per-source freshness, and which search backend answered |
+| `map` / `defs` / `refs` | your local checkout, no server and no network |
+| `why PATH:LINE` | the review comments left on this line's code when it was written — milestone 4, a stub today |
+| `precedent` | completed units of work — milestone 4, a stub today |
+
+Global: `--json` for machine-readable output, `--compact` to trim snippets, `--api` to
+override `GHLORE_API`. `--json` and `--compact` are accepted on **either side** of the verb.
+No results is exit 0 with an empty result, never nonzero — so an agent cannot mistake
+"nothing in the index" for "the tool is broken".
 
 ---
 
