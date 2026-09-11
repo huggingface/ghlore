@@ -34,7 +34,7 @@ what it measured), **§6's query expansion** (§10.4), and **§6's weighted rank
 fetch | backfill | sample | derive | poll | sweep | authority | mine | judge | bench |
 serve | status` and `ghlore search | thread | inflight | status | map | defs | refs` work
 end to end.
-~11,000 lines under `ghlore/`, **747 tests**, every store-level and retrieval-level one on
+~11,000 lines under `ghlore/`, **806 tests**, every store-level and retrieval-level one on
 both dialects. The `--file`/`--symbol`/`--error`/`--test` filters answer. **Retrieval is
 ranked**: full text, filters, the trust floor, the expansion fan-out and §6's weighted
 score. Kind-aware decay is built and **gated off** (`ranking.DECAY_ENABLED`) — §6's table
@@ -69,7 +69,7 @@ there, not only the bot one — see §10, where the 18-vs-4,071 measurement is r
 
 | Built | Empty — nothing written yet |
 | --- | --- |
-| `store/` — `schema.py`, `dialect.py`, `migrations/` (6 steps), `repository.py`, `documents_history` (§14.1) | `ingest/plugins.py` |
+| `store/` — `schema.py`, `dialect.py`, `migrations/` (7 steps), `repository.py`, `documents_history` (§14.1) | `ingest/plugins.py` |
 | `github/` — `client.py`, `bulk.py`, `graphql.py`, `fetch_thread.py` | `precedents` and `ghlore precedent` — milestone 4 |
 | `ingest/` — normalize, chunk, timestamps, versions, `extract` (§5.3), `relationships` (§13.3), `index_thread`, `poll`, `backfill`, `sample` (§5.5), `sweep` | `code/` — the *server-side* half of the lens: the working clone, `path_aliases`, `enclosing_symbol` at derive time |
 | `search/` — `SearchBackend` per dialect, filters, caps, the thread view, §6.2's query-kind trust floors, `expansion.py` (§6, §10.4), `ranking.py` (§6, §10.5) | |
@@ -403,6 +403,14 @@ child tables.
 A green suite that only ever ran SQLite is a green suite about the wrong database.
 
 ## Traps
+
+**A derived column is null until something re-derives it, and the fallback is the old
+behaviour.** `thread_files.source` (migration 7, huggingface/ghlore#17) is filled by
+`extract_signals`, so on an index migrated but not re-derived every row reads null and
+`_files_by_provenance` falls back to inferring from `change_type` — which cannot tell an
+inline comment's anchor from a filename in prose, exactly the conflation the column exists
+to end. The deploy is not the fix; `ghlored derive` is. Same shape as `trust` after
+`ghlored authority`, and as `thread_links` after §13.3.
 
 **The GitHub API lies about its own limits, quietly.** All five were measured, and a
 backfill written without them looks successful while missing most of the corpus:

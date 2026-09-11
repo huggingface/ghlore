@@ -32,7 +32,10 @@ dev = ["ghlore[postgres,python]", "pytest>=8", "ruff>=0.5"]
 
 [project.scripts]
 ghlore = "ghlore.cli:main"
-ghlored = "ghlore.daemon:main"
+# Through the shim, not straight at `ghlore.daemon:main`: the base install registers this
+# script and does NOT carry the daemon's dependencies, so the import has to be guarded or
+# a client-only install answers `ghlored --help` with a ModuleNotFoundError traceback.
+ghlored = "ghlore.entrypoints:ghlored"
 
 [project.entry-points."ghlore.languages"]
 python = "ghlore.code.providers.python:PythonProvider"

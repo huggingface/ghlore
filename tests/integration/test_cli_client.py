@@ -118,6 +118,28 @@ def test_a_daemon_that_is_down_does_not_look_like_an_empty_index(
     assert "ghlored serve" in str(exc.value)
 
 
+def test_a_local_address_that_does_not_answer_is_a_different_problem(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ "The deployment is behind a VPN" and "you pointed me at a daemon you never started"
+    wear the same symptom and take opposite actions -- and on a client-only install the
+    remedy the old message offered could not be run at all (huggingface/ghlore#19)."""
+
+    def refuse(*_a, **_k):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(httpx, "request", refuse)
+    monkeypatch.setenv("GHLORE_API", "http://127.0.0.1:8899")
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["search", "anything"])
+
+    message = str(exc.value)
+    assert "nothing is listening" in message
+    assert "ghlore[server]" in message, "and `ghlored serve` needs an extra to exist"
+    assert "VPN" not in message, "which is a different diagnosis"
+
+
 def test_a_daemon_that_wants_a_token_says_so(engine, monkeypatch: pytest.MonkeyPatch) -> None:
     auth = Authenticator(tokens=(Token("t", "secret", repos=None),))
     server = TestClient(build_app(engine, auth=auth))

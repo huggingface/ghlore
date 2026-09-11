@@ -64,7 +64,7 @@ def test_the_changed_file_list_wins_over_prose() -> None:
     detail = {"files": {"nodes": [{"path": "src/mod.py", "changeType": "ADDED"}]}}
     rows = _signals("touches src/mod.py", detail=detail).files
 
-    assert rows == [{"path": "src/mod.py", "change_type": "ADDED"}]
+    assert rows == [{"path": "src/mod.py", "change_type": "ADDED", "source": "changed"}]
 
 
 def test_an_inline_comments_own_path_is_definitive() -> None:

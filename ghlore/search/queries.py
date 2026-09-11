@@ -40,6 +40,20 @@ MAX_HITS_PER_THREAD = 3
 #: opening is reliably worth reading.
 MAX_THREAD_COMMENTS = 10
 MAX_BODY_CHARS = 800
+#: What an unfocused ``thread`` does with those ten slots, and the name it reports.
+#: Two at each end and the rest spread across the middle, because a *contested* thread
+#: resolves in the middle: on ``huggingface/transformers#39847`` the first five and last
+#: five were four emoji, a ``cc @``, a ``run-slow:`` line and CI chatter, while the review
+#: that decided the question sat at position 51 of 97 and was structurally unreachable
+#: (huggingface/ghlore#16).
+ENDS_AND_MIDDLE = "ends+middle"
+#: How many of the ten each end gets. Small on purpose: the opening states the problem and
+#: the last word is usually the resolution, but everything else that matters is between
+#: them.
+THREAD_ENDS = 2
+#: How much more than a page the focused fetch asks for, so that collapsing a comment's
+#: chunks into one hit still leaves ten comments to show.
+PASSAGE_OVERFETCH = 3
 #: ``inflight`` answers "is somebody already fixing this?", and the useful answer is one
 #: pull request. Ten is the same cap as a result page for the same reason.
 MAX_CLAIMS = 10
@@ -154,6 +168,17 @@ class Hit:
     snippet: str
     score: float
     created_at: dt.datetime | None = None
+    #: Which comment this is a piece of, and which piece. A long comment is chunked into
+    #: several documents, and without these two a ranked page can carry the same comment
+    #: twice -- same URL, same author, same tier -- reading as two people agreeing
+    #: (huggingface/ghlore#18). ``source_id`` is the comment's own GitHub id, so it is the
+    #: identity ``url`` is not: a chunk has no URL of its own.
+    source_id: str = ""
+    chunk_index: int = 0
+    #: How many chunks that comment has, where the caller knows. ``0`` means "not
+    #: counted here" rather than "one": the corpus-wide search path does not pay for the
+    #: aggregate, and the renderer says nothing rather than something wrong.
+    passages: int = 0
     #: Every term of the score, for the human tuning the weights (section 8). An agent has
     #: no use for *why* something ranked; the person has nothing else. Dropped by
     #: ``--compact``.
@@ -181,17 +206,36 @@ class ThreadView:
     #: on environment boilerplate, so ``### Reproduction`` began at almost exactly the cut.
     body_chars: int = 0
     body_truncated: bool = False
-    files: tuple[str, ...] = ()
-    #: The changed-file list's denominator. ``files`` mixes three sources -- the per-PR
-    #: pass's definitive list, an inline comment's own path, and paths named in prose --
-    #: and the definitive part is taken 100 at a time, so it is routinely a subset. A
-    #: *missing* entry in a list is read as a negative fact, and on
-    #: ``huggingface/transformers#39847`` (323 changed files, 105 indexed) that absence
-    #: would have exonerated the pull request that caused the bug being diagnosed.
+    #: The pull request's diff, as far as it was collected. **Only this list is about
+    #: what the thread changed.**
+    files_changed: tuple[str, ...] = ()
+    #: Paths an inline review comment is anchored to. Also the diff -- GitHub will not
+    #: anchor a comment anywhere else -- but *not* part of the page the per-PR pass
+    #: collected, so it is counted separately and is the one source that recovers a path
+    #: the 100-row cap dropped.
+    files_anchored: tuple[str, ...] = ()
+    #: Paths read out of prose. Kept, because a traceback's path is often the most useful
+    #: thing in a thread -- and kept *apart*, because it is an extraction rather than a
+    #: fact: a bare basename, a file the thread never touched, or the same file the diff
+    #: already names in full all land here (huggingface/ghlore#17).
+    files_mentioned: tuple[str, ...] = ()
+    #: The changed-file list's denominator. The per-PR pass takes the diff 100 at a time,
+    #: so ``files_changed`` is routinely a subset. A *missing* entry in a list is read as
+    #: a negative fact, and on ``huggingface/transformers#39847`` (323 changed files, 100
+    #: collected) that absence would have exonerated the pull request that caused the bug
+    #: being diagnosed.
     files_total: int | None = None
     files_collected: int = 0
     links: tuple[dict[str, Any], ...] = ()
+    #: Comments, not documents. A long comment is several documents, so counting rows
+    #: overstated the thread and made ``10 of 89 comments`` a count of two different
+    #: things (huggingface/ghlore#18).
     total_documents: int = 0
+    #: How the returned comments were chosen -- ``focus`` when a query ordered them,
+    #: :data:`ENDS_AND_MIDDLE` otherwise. A positional sample and a ranked top-ten are
+    #: indistinguishable on the page unless the page says which it is, and the first ten
+    #: of a 97-comment thread were read as its ten best (huggingface/ghlore#16).
+    selection: str = ""
     #: What ``focus`` asked, and how many comments carry *every* one of its terms. A focus
     #: **orders** a thread's comments and never selects them (see
     #: :meth:`ghlore.search.backends.base.SearchBackend._focused`), so this is the

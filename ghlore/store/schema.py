@@ -139,6 +139,14 @@ thread_files = Table(
     _fk("threads.id"),
     Column("path", Text, nullable=False),
     Column("change_type", Text),
+    # WHERE the path came from, because the three sources differ in kind and a caller that
+    # cannot tell them apart reads presence as evidence: `changed` is the per-PR pass's
+    # definitive diff, `comment` is a path GitHub itself attached an inline review comment
+    # to, and `mentioned` is a string somebody typed in prose -- which may be a bare
+    # basename, may be a file this thread never touched, and on
+    # `huggingface/transformers#39847` was both (huggingface/ghlore#17). `change_type`
+    # cannot carry this: it is null for the first two of those as well as the third.
+    Column("source", Text),
 )
 thread_symbols = Table(
     "thread_symbols",

@@ -43,6 +43,24 @@ from typing import Any
 
 from ghlore.ingest.normalize import redact
 
+# -- where a path came from (huggingface/ghlore#17) ------------------------
+
+#: The per-PR pass's diff. Definitive, and the only source counted against
+#: ``threads.metadata.changed_files``.
+CHANGED = "changed"
+#: The file an inline review comment is attached to. GitHub asserts this, not us -- so it
+#: is a fact about the thread, but it is not the diff and it has no ``change_type``.
+FROM_COMMENT = "comment"
+#: A path-shaped token read out of prose. May be a bare basename, may be a file this
+#: thread never touched, and may be both at once: ``huggingface/transformers#39847``
+#: carries `modeling_rope_utils.py` from a comment *and* `src/transformers/…` from the
+#: diff, and `config.json`, which that pull request does not touch.
+MENTIONED = "mentioned"
+
+#: Strongest first. A path with several provenances is stored as the strongest one.
+FILE_SOURCES = (CHANGED, FROM_COMMENT, MENTIONED)
+
+
 # -- what a signal row looks like ------------------------------------------
 
 
@@ -222,6 +240,11 @@ def extract_signals(
     a merged PR's changed-file list and commits.
     """
     files: dict[str, str | None] = {}
+    #: Where each path came from, strongest wins (see :data:`FILE_SOURCES`). Kept beside
+    #: `files` rather than folded into it because `change_type` is null for two of the
+    #: three sources, which is what let a filename somebody typed in a comment sit
+    #: indistinguishably among a pull request's real diff (huggingface/ghlore#17).
+    sources: dict[str, str] = {}
     symbols: dict[tuple[str, str | None], str | None] = {}
     errors: dict[tuple[str | None, str], None] = {}
     tests: dict[tuple[str, str | None], None] = {}
@@ -229,16 +252,25 @@ def extract_signals(
     for document in documents:
         text = _readable(document)
         _scan_text(text, files=files, symbols=symbols, errors=errors, tests=tests)
+        # Everything `_scan_text` adds is read out of prose: a traceback frame, a node id,
+        # a path-shaped token. Inference, and sometimes a bare basename.
+        for path in files:
+            sources.setdefault(path, MENTIONED)
         # An inline review comment's path is definitive: GitHub attached it to that file.
         path = _definitive_path(str((document.get("metadata") or {}).get("path") or ""))
         if path:
             files.setdefault(path, None)
+            sources[path] = FROM_COMMENT
 
     for path, change_type in _changed_files(detail):
         files[path] = change_type
+        sources[path] = CHANGED
 
     return Signals(
-        files=[{"path": path, "change_type": change} for path, change in sorted(files.items())],
+        files=[
+            {"path": path, "change_type": change, "source": sources.get(path, MENTIONED)}
+            for path, change in sorted(files.items())
+        ],
         symbols=[
             {"symbol": symbol, "path": path, "symbol_type": kind}
             for (symbol, path), kind in sorted(symbols.items(), key=_symbol_sort)

@@ -38,12 +38,16 @@ from sqlalchemy import (
     select,
 )
 
+from ghlore.ingest.extract import CHANGED, FROM_COMMENT, MENTIONED
 from ghlore.search.queries import (
+    ENDS_AND_MIDDLE,
     HUMAN_TRUST,
     MAX_BODY_CHARS,
     MAX_CLAIMS,
     MAX_HITS_PER_THREAD,
     MAX_THREAD_COMMENTS,
+    PASSAGE_OVERFETCH,
+    THREAD_ENDS,
     BackendInfo,
     Claim,
     Hit,
@@ -154,6 +158,11 @@ class SearchBackend(ABC):
                 s.threads.c.thread_type,
                 s.threads.c.title,
                 s.documents.c.source_type,
+                # Which comment, and which piece of it: a hit is a *document*, and a long
+                # comment is several. Two of them on one page share a URL and read as two
+                # people agreeing unless the page can say otherwise (huggingface/ghlore#18).
+                s.documents.c.source_id,
+                s.documents.c.chunk_index,
                 s.documents.c.url,
                 s.documents.c.author,
                 s.documents.c.trust,
@@ -396,6 +405,8 @@ class SearchBackend(ABC):
             snippet=snippet(row.body_text, query.terms, limit=query.snippet_chars),
             score=float(row.score or 0.0),
             created_at=row.github_created_at,
+            source_id=str(row.source_id or ""),
+            chunk_index=int(row.chunk_index or 0),
             breakdown=_breakdown(row),
         )
 
@@ -427,14 +438,7 @@ class SearchBackend(ABC):
                     .order_by(s.thread_labels.c.label)
                 )
             )
-            files = tuple(
-                str(path)
-                for (path,) in conn.execute(
-                    select(s.thread_files.c.path.distinct())
-                    .where(s.thread_files.c.thread_id == row.id)
-                    .order_by(s.thread_files.c.path)
-                )
-            )
+            paths = _files_by_provenance(conn, row.id)
             # No join: the target *number* is the claim (section 13.3), and joining to
             # `threads` would drop exactly the edges worth reporting -- a pull request
             # closing an issue this index has never seen.
@@ -450,19 +454,13 @@ class SearchBackend(ABC):
                     .order_by(s.thread_links.c.target_number)
                 )
             )
-            collected = int(
-                conn.execute(
-                    select(func.count(s.thread_files.c.path.distinct())).where(
-                        s.thread_files.c.thread_id == row.id,
-                        s.thread_files.c.change_type.isnot(None),
-                    )
-                ).scalar_one()
-                or 0
-            )
+            # The denominator's numerator: only the diff counts against `changed_files`,
+            # so this and `files_changed` are the same quantity counted once.
+            collected = len(paths[CHANGED])
             # Indexed, not `row.metadata`: `Row` shadows it.
             changed = (row._mapping["metadata"] or {}).get("changed_files")
             body, body_chars = self._body(conn, row.id, full=full)
-            comments, total, matched = self._comments(conn, row, focus)
+            comments, total, matched, selection = self._comments(conn, row, focus)
 
         return ThreadView(
             repo=row.repo,
@@ -478,11 +476,14 @@ class SearchBackend(ABC):
             body_chars=body_chars,
             body_truncated=len(body) < body_chars,
             comments=comments,
-            files=files,
+            files_changed=paths[CHANGED],
+            files_anchored=paths[FROM_COMMENT],
+            files_mentioned=paths[MENTIONED],
             files_total=int(changed) if changed is not None else None,
             files_collected=collected,
             links=links,
             total_documents=total,
+            selection=selection,
             focus=focus,
             focus_matched=matched,
         )
@@ -592,10 +593,12 @@ class SearchBackend(ABC):
 
     def _comments(
         self, conn: Any, thread: Any, focus: str
-    ) -> tuple[tuple[Hit, ...], int, int | None]:
+    ) -> tuple[tuple[Hit, ...], int, int | None, str]:
         base = select(
             s.documents.c.id,
             s.documents.c.source_type,
+            s.documents.c.source_id,
+            s.documents.c.chunk_index,
             s.documents.c.url,
             s.documents.c.author,
             s.documents.c.trust,
@@ -606,14 +609,23 @@ class SearchBackend(ABC):
             s.documents.c.source_type.notin_(("title", "body")),
             s.documents.c.trust.in_(admissible_trust(None)),
         )
-        total = len(conn.execute(base).all())
+        # Comments, not rows: a 9,827-character comment is several documents and counting
+        # them called one comment two (huggingface/ghlore#18). `passages` is the same
+        # aggregate read the other way, and it is what lets a hit say it is a piece.
+        passages = _passage_counts(conn, base)
+        total = len(passages)
 
         matched: int | None = None
         if focus.strip():
-            matched = len(conn.execute(self.fts_filter(base, focus)).all())
-            rows = self._focused(conn, base, focus)
+            matched = len(
+                {
+                    (row.source_type, row.source_id)
+                    for row in conn.execute(self.fts_filter(base, focus))
+                }
+            )
+            rows, selection = self._focused(conn, base, focus), "focus"
         else:
-            rows = _chronological(conn, base, MAX_THREAD_COMMENTS)
+            rows, selection = _ends_and_middle(conn, base, MAX_THREAD_COMMENTS), ENDS_AND_MIDDLE
 
         terms = tokenize(focus)
         hits = tuple(
@@ -630,10 +642,13 @@ class SearchBackend(ABC):
                 snippet=snippet(row.body_text, terms),
                 score=float(row.score or 0.0),
                 created_at=row.github_created_at,
+                source_id=str(row.source_id or ""),
+                chunk_index=int(row.chunk_index or 0),
+                passages=passages.get((row.source_type, row.source_id), 1),
             )
             for row in rows
         )
-        return hits, total, matched
+        return hits, total, matched, selection
 
     def _focused(self, conn: Any, base: Select, focus: str) -> list[Any]:
         """Order a thread's comments by a focus query. **Never filter on it.**
@@ -657,30 +672,90 @@ class SearchBackend(ABC):
         first and a partial match follows it. FTS5 cannot score what it did not ``MATCH``
         (see the sqlite backend), so there the matched comments lead and the chronological
         remainder fills the rest of the page.
+
+        Chunks collapse here too, which is why the fetch is :data:`PASSAGE_OVERFETCH`
+        times the page: two pieces of one comment ranked first and second is two slots
+        spent on one voice, and it reads as corroboration (huggingface/ghlore#18).
         """
+        wanted = MAX_THREAD_COMMENTS * PASSAGE_OVERFETCH
         ranking = self.unfiltered_fts_score(focus)
         if ranking is not None:
-            return list(
+            rows = list(
                 conn.execute(
                     base.add_columns(ranking.label("score"))
                     .order_by(ranking.desc(), s.documents.c.github_created_at.asc().nullslast())
-                    .limit(MAX_THREAD_COMMENTS)
+                    .limit(wanted)
                 )
             )
+            return _one_per_comment(rows)[:MAX_THREAD_COMMENTS]
 
         score = self.fts_score(focus)
-        rows = list(
-            conn.execute(
-                self.fts_filter(base.add_columns(score.label("score")), focus)
-                .order_by(score.desc())
-                .limit(MAX_THREAD_COMMENTS)
+        rows = _one_per_comment(
+            list(
+                conn.execute(
+                    self.fts_filter(base.add_columns(score.label("score")), focus)
+                    .order_by(score.desc())
+                    .limit(wanted)
+                )
             )
-        )
+        )[:MAX_THREAD_COMMENTS]
         if len(rows) >= MAX_THREAD_COMMENTS:
             return rows
-        chosen = {row.id for row in rows}
-        remainder = [row for row in _chronological(conn, base, None) if row.id not in chosen]
+        chosen = {(row.source_type, row.source_id) for row in rows}
+        remainder = [
+            row
+            for row in _one_per_comment(_chronological(conn, base, None))
+            if (row.source_type, row.source_id) not in chosen
+        ]
         return rows + _ends(remainder, MAX_THREAD_COMMENTS - len(rows))
+
+
+def _files_by_provenance(conn: Any, thread_id: int) -> dict[str, tuple[str, ...]]:
+    """One thread's paths, one list per source (huggingface/ghlore#17).
+
+    Merged into a single array these answer a membership question affirmatively and
+    wrongly: ``config.json`` is named in ``huggingface/transformers#39847``'s discussion
+    and is not in its 323-file diff, and a bare ``modeling_rope_utils.py`` sat next to the
+    real ``src/transformers/modeling_rope_utils.py`` with nothing to tell them apart.
+
+    Three lists rather than two, because the middle one is neither. A path an inline
+    review comment hangs on **is** in the diff -- GitHub will not anchor a comment
+    anywhere else -- so it is evidence, unlike prose; but it is not part of the page the
+    per-PR pass collected, so counting it against ``changed_files`` would make the
+    numerator and the denominator two different quantities again. It is often a path past
+    the 100-row cap, which makes it the one source that recovers what the cap dropped.
+
+    ``source`` is null on rows written before migration 7, and the fallback is the old
+    inference: right for the diff (only it has a ``change_type``) and unable to tell an
+    anchor from prose, which is exactly the conflation that was there before and no worse.
+    A ``ghlored derive`` fixes it for real.
+    """
+    out: dict[str, list[str]] = {CHANGED: [], FROM_COMMENT: [], MENTIONED: []}
+    rows = conn.execute(
+        select(s.thread_files.c.path, s.thread_files.c.change_type, s.thread_files.c.source)
+        .where(s.thread_files.c.thread_id == thread_id)
+        .distinct()
+        .order_by(s.thread_files.c.path)
+    )
+    for path, change_type, source in rows:
+        source = source or (CHANGED if change_type is not None else MENTIONED)
+        out.get(source, out[MENTIONED]).append(str(path))
+    return {source: tuple(dict.fromkeys(paths)) for source, paths in out.items()}
+
+
+def _passage_counts(conn: Any, base: Select) -> dict[tuple[str, str], int]:
+    """How many documents each comment was chunked into (huggingface/ghlore#18).
+
+    One aggregate over the thread, which is what makes both numbers honest: the thread's
+    comment count stops counting chunks, and a hit can say *"passage 2 of 7"* instead of
+    arriving as a second comment with the same URL, author and tier as the first.
+    """
+    counted = base.with_only_columns(
+        s.documents.c.source_type,
+        s.documents.c.source_id,
+        func.count().label("passages"),
+    ).group_by(s.documents.c.source_type, s.documents.c.source_id)
+    return {(row.source_type, row.source_id): int(row.passages) for row in conn.execute(counted)}
 
 
 def _chronological(conn: Any, base: Select, limit: int | None) -> list[Any]:
@@ -693,6 +768,75 @@ def _chronological(conn: Any, base: Select, limit: int | None) -> list[Any]:
         )
     )
     return rows if limit is None else _ends(rows, limit)
+
+
+def _ends_and_middle(conn: Any, base: Select, limit: int) -> list[Any]:
+    """The unfocused page: both ends, and the middle actually represented.
+
+    Taking the first five and the last five is defensible in the abstract -- an opening
+    states the problem and an ending states the resolution -- and it fails on exactly the
+    threads ``thread`` is for. A long thread is long *because* it was contested, and a
+    contested thread resolves in the middle, before the CI churn that fills the tail. On
+    ``huggingface/transformers#39847`` the ten it returned were four emoji, a ``cc @``, a
+    ``run-slow:`` line and CI chatter, while the two comments that answered the question
+    sat at positions 51 and 79 of 97 (huggingface/ghlore#16).
+
+    So: :data:`THREAD_ENDS` at each end, and the remaining slots spread across everything
+    between them -- **reviews first**, because a review with a state is an act rather than
+    a remark, then evenly spaced so no region of the middle is structurally unreachable.
+    Chunks of one comment collapse into one slot on the way (huggingface/ghlore#18): ten
+    slots spent on five comments is a real cost at this cap.
+
+    Deterministic, and it claims nothing it cannot support: the page says it is a sample,
+    not a ranking (:data:`ENDS_AND_MIDDLE`), and ``--focus`` is the way to rank.
+    """
+    rows = _one_per_comment(_chronological(conn, base, None))
+    if len(rows) <= limit:
+        return rows
+    ends = min(THREAD_ENDS, limit // 2)
+    head, tail = rows[:ends], rows[len(rows) - ends :]
+    middle = rows[ends : len(rows) - ends]
+    return head + _spread(middle, limit - 2 * ends) + tail
+
+
+def _one_per_comment(rows: list[Any]) -> list[Any]:
+    """One row per comment, the first chunk standing for the rest, order preserved."""
+    best: dict[tuple[str, str], Any] = {}
+    for row in rows:
+        best.setdefault((row.source_type, row.source_id), row)
+    return list(best.values())
+
+
+def _spread(rows: list[Any], slots: int) -> list[Any]:
+    """``slots`` of ``rows``: every review first, then an even sample of the remainder.
+
+    Even rather than "the longest" or "the most replied to": length is not merit and the
+    reply count is not in the payload, whereas a gap in coverage is the actual defect --
+    any region of the middle must be able to appear.
+    """
+    if slots <= 0 or not rows:
+        return []
+    if len(rows) <= slots:
+        return rows
+    chosen = {
+        id(row) for row in rows if str(row.source_type).startswith("review")
+    }  # an act, not a remark
+    if len(chosen) > slots:
+        reviews = [row for row in rows if id(row) in chosen]
+        chosen = {id(row) for row in _even(reviews, slots)}
+    rest = [row for row in rows if id(row) not in chosen]
+    chosen |= {id(row) for row in _even(rest, slots - len(chosen))}
+    return [row for row in rows if id(row) in chosen]
+
+
+def _even(rows: list[Any], slots: int) -> list[Any]:
+    """``slots`` rows spaced evenly across ``rows``, endpoints included."""
+    if slots <= 0:
+        return []
+    if len(rows) <= slots:
+        return rows
+    step = (len(rows) - 1) / (slots - 1) if slots > 1 else 0
+    return [rows[round(i * step)] for i in range(slots)]
 
 
 def _breakdown(row: Any) -> dict[str, float]:

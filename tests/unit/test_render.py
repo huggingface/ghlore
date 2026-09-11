@@ -33,31 +33,68 @@ def _thread(**fields):
 
 
 def test_a_truncated_file_list_says_it_is_truncated() -> None:
-    """`huggingface/transformers#39847`: 323 changed files, 105 indexed, and the absence
+    """`huggingface/transformers#39847`: 323 changed files, 100 collected, and the absence
     of a `gpt_neox` path read as evidence the pull request did not touch it."""
     out = render_thread(
-        _thread(files=[f"f{i}.py" for i in range(105)], files_total=323, files_collected=100)
+        _thread(
+            files_changed=[f"f{i}.py" for i in range(100)], files_total=323, files_collected=100
+        )
     )
 
-    assert "105" in out and "323" in out
+    assert "100" in out and "323" in out
     assert "TRUNCATED" in out
 
 
 def test_a_complete_file_list_does_not_cry_truncation() -> None:
-    out = render_thread(_thread(files=["a.py", "b.py"], files_total=2, files_collected=2))
+    out = render_thread(_thread(files_changed=["a.py", "b.py"], files_total=2, files_collected=2))
 
     assert "complete" in out
     assert "TRUNCATED" not in out
 
 
-def test_paths_from_prose_are_not_presented_as_a_changed_file_list() -> None:
-    """An issue has no changed-file list, and a pull request whose per-PR pass has not run
-    yet has an empty one -- neither is "this thread touched two files"."""
-    out = render_thread(_thread(files=["a.py"], files_total=None, files_collected=0))
-    assert "named in the discussion" in out
+def test_the_diff_and_the_discussion_are_two_lists() -> None:
+    """A filename somebody typed is not a changed file, and merged into one array it
+    answered "did this pull request touch it?" with yes. `config.json` is the case: named
+    in `huggingface/transformers#39847`'s discussion, absent from its 323-file diff."""
+    out = render_thread(
+        _thread(
+            files_changed=["src/transformers/modeling_rope_utils.py"],
+            files_mentioned=["config.json", "modeling_rope_utils.py"],
+            files_total=323,
+            files_collected=1,
+        )
+    )
 
-    unvisited = render_thread(_thread(files=["a.py"], files_total=12, files_collected=0))
-    assert "not collected" in unvisited and "absence here is not evidence" in unvisited
+    changed, mentioned = out.index("changed files:"), out.index("mentioned in the discussion:")
+    assert changed < mentioned
+    assert "NOT the diff" in out
+    # The bare basename and the real path are both present and on different lines: the
+    # thing that made them indistinguishable was sharing one array.
+    assert out.index("src/transformers/modeling_rope_utils.py") < mentioned
+    assert "config.json" in out[mentioned:]
+
+
+def test_an_anchor_with_no_collected_diff_is_a_sentence_not_a_dangling_fragment() -> None:
+    """An issue, or a pull request whose per-PR pass has not run, has anchors and no
+    changed-file line for them to continue -- and `  + 1 more…` under nothing reads as a
+    footnote to a list that is not on the page. Found rendering a real serge thread."""
+    out = render_thread(_thread(files_anchored=["reviewbot/llm_client.py"], files_total=None))
+
+    assert "not collected for this thread" in out
+    assert "can only hang on a changed file" in out
+    assert "  + 1 more" not in out
+
+
+def test_a_thread_with_only_mentioned_paths_claims_no_diff() -> None:
+    """An issue has no changed-file list, and a pull request whose per-PR pass has not run
+    yet has an empty one -- neither is "this thread touched a file"."""
+    out = render_thread(_thread(files_mentioned=["a.py"], files_total=None, files_collected=0))
+    assert "mentioned in the discussion" in out
+    assert "changed files:" not in out
+
+    unvisited = render_thread(_thread(files_mentioned=["a.py"], files_total=12, files_collected=0))
+    assert "none collected of 12" in unvisited
+    assert "cannot answer whether it touched a path" in unvisited
 
 
 # -- the body --------------------------------------------------------------
@@ -96,7 +133,69 @@ def test_a_focus_that_matched_nothing_says_so_next_to_the_comments() -> None:
 def test_an_unfocused_thread_still_suggests_a_focus() -> None:
     out = render_thread(_thread(comments_returned=10, comments_total=30))
 
-    assert "Narrow it with a focus query" in out
+    assert "--focus" in out
+
+
+# -- what the ten comments actually are (huggingface/ghlore#16, #18) -------
+
+
+def test_an_unfocused_page_says_it_is_a_sample_and_not_a_ranking() -> None:
+    """`-- 10 of 89 comments --` is indistinguishable from a ranked top ten, and was read
+    as one: the agent concluded the thread held nothing better and stopped, while the
+    review that answered its question sat at position 51 of 97."""
+    out = render_thread(_thread(selection="ends+middle", comments_returned=10, comments_total=89))
+
+    assert "SAMPLED not ranked" in out
+    assert "--focus" in out
+
+
+def test_a_focused_page_is_not_called_a_sample() -> None:
+    out = render_thread(
+        _thread(selection="focus", focus="rope", focus_matched=2, comments_total=89)
+    )
+
+    assert "SAMPLED" not in out
+    assert "best first" in out
+
+
+def test_a_chunked_comment_says_which_passage_it_is() -> None:
+    """Two hits with one URL, one author and one tier read as two people agreeing. They
+    were two pieces of a 9,827-character comment, one of them prose from inside a
+    collapsed `<details>` block."""
+    passage = {
+        "repo": "owner/name",
+        "number": 1,
+        "url": "https://github.com/owner/name/pull/1#issuecomment-3223571427",
+        "source_type": "issue_comment",
+        "source_id": "3223571427",
+        "snippet": "a passage",
+        "passages": 7,
+    }
+    out = render_search({"hits": [{**passage, "chunk_index": 3}, {**passage, "chunk_index": 4}]})
+
+    assert "passage 4 of 7 in this comment" in out
+    assert "passage 5 of 7 in this comment" in out
+    assert "2 of its passages are on this page" in out
+
+
+def test_an_unchunked_comment_says_nothing_about_passages() -> None:
+    out = render_search(
+        {
+            "hits": [
+                {
+                    "repo": "owner/name",
+                    "number": 1,
+                    "source_type": "issue_comment",
+                    "source_id": "42",
+                    "chunk_index": 0,
+                    "passages": 1,
+                    "snippet": "the whole comment",
+                }
+            ]
+        }
+    )
+
+    assert "passage" not in out
 
 
 # -- nothing matched -------------------------------------------------------

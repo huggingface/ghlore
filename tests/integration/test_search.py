@@ -168,15 +168,22 @@ def test_a_symbol_filter_matches_a_stack_frame(engine: Engine, fake: FakeGitHub)
 
 
 def test_a_thread_view_lists_the_files_extraction_found(engine: Engine, fake: FakeGitHub) -> None:
-    """``ThreadView.files`` has read ``thread_files`` since milestone 2 and had nothing to
-    read. Asserted here because it is the one place the signals are *rendered*."""
+    """``ThreadView`` has read ``thread_files`` since milestone 2 and had nothing to read.
+    Asserted here because it is the one place the signals are *rendered*.
+
+    Both paths came out of the body, so both are `mentioned` and neither is a changed
+    file: a pull request with no per-PR pass has no diff to report, and presenting one is
+    what let a filename somebody typed answer a membership question
+    (huggingface/ghlore#17).
+    """
     fake.add_pr(1, body="see src/mod.py and docs/README.md")
     _index(engine, fake, 1)
 
     view = open_backend(engine).thread(REPO, 1)
 
     assert view is not None
-    assert view.files == ("docs/README.md", "src/mod.py")
+    assert view.files_mentioned == ("docs/README.md", "src/mod.py")
+    assert view.files_changed == ()
 
 
 def test_since_excludes_older_documents(engine: Engine, fake: FakeGitHub) -> None:
@@ -465,7 +472,11 @@ def test_a_truncated_changed_file_list_carries_its_denominator(
     assert view is not None
     assert view.files_total == 105
     assert view.files_collected == 100
-    assert "src/m104/modeling_m104.py" not in view.files  # and the count above says so
+    # The numerator and the denominator are now the same quantity: `len(files_changed)`
+    # *is* `files_collected`, where the old single array mixed in prose-derived paths and
+    # disagreed with its own count by five (huggingface/ghlore#17).
+    assert len(view.files_changed) == view.files_collected
+    assert "src/m104/modeling_m104.py" not in view.files_changed  # and the count says so
 
 
 def test_a_thread_with_no_changed_file_list_reports_none_rather_than_zero(
@@ -482,8 +493,122 @@ def test_a_thread_with_no_changed_file_list_reports_none_rather_than_zero(
     assert view.files_collected == 0
 
 
+def test_a_path_is_filed_under_where_it_came_from(engine: Engine, fake: FakeGitHub) -> None:
+    """The three sources, told apart (huggingface/ghlore#17). The diff is what the pull
+    request changed; an inline comment's anchor is also the diff and also not part of the
+    collected page; a path in prose is somebody typing, and `config.json` here is the
+    shape that answered "did this pull request touch it?" with a wrong yes."""
+    pr = fake.add_pr(
+        1,
+        body="this breaks config.json handling",
+        updated_at="2026-01-01T00:00:00Z",
+        merged_at="2026-01-02T00:00:00Z",
+    )
+    pr.files = ["src/real/changed.py"]
+    fake.add_review_comment(pr, 300, "move this", path="src/real/anchored.py")
+    _backfill(engine, fake)
+
+    view = open_backend(engine).thread(REPO, 1)
+
+    assert view is not None
+    assert view.files_changed == ("src/real/changed.py",)
+    assert view.files_anchored == ("src/real/anchored.py",)
+    assert "config.json" in view.files_mentioned
+    # The one property the merged array could not hold: a prose filename is never
+    # presented as something the pull request changed.
+    assert "config.json" not in view.files_changed + view.files_anchored
+
+
 def test_a_missing_thread_is_none_not_an_error(engine: Engine) -> None:
     assert open_backend(engine).thread(REPO, 4242) is None
+
+
+# -- which ten comments, and how many comments there are -------------------
+
+
+def test_the_middle_of_a_long_thread_is_reachable_without_a_focus(
+    engine: Engine, fake: FakeGitHub
+) -> None:
+    """First-five-and-last-five is a sample that structurally excludes the middle, and a
+    long thread is long because it was contested -- so the comment that settled it is in
+    the middle by construction. On `huggingface/transformers#39847` the two that answered
+    the question were at 51 and 79 of 97 and neither was reachable (huggingface/ghlore#16).
+    """
+    pr = fake.add_pr(1)
+    for i in range(40):
+        fake.add_comment(pr, 100 + i, f"comment {i}", created_at=f"2026-01-01T00:{i:02d}:00Z")
+    _index(engine, fake, 1)
+
+    view = open_backend(engine).thread(REPO, 1)
+
+    assert view is not None
+    assert view.selection == "ends+middle"
+    assert len(view.comments) == 10
+    positions = [int(hit.snippet.split()[-1]) for hit in view.comments]
+    assert positions[:2] == [0, 1], "the opening states the problem"
+    assert positions[-2:] == [38, 39], "and the end usually resolves it"
+    # The load-bearing assertion, and the one the old first-five-and-last-five fails:
+    # its ten were 0-4 and 35-39, so nothing between 10 and 30 could ever appear.
+    assert [p for p in positions if 10 <= p <= 30], "the middle is reachable"
+    assert len(set(positions)) == 10, "and no slot is spent twice"
+
+
+def test_a_review_beats_chatter_for_a_middle_slot(engine: Engine, fake: FakeGitHub) -> None:
+    """A review with a state is an act; `🤗` is not. Nine of the ten default comments on
+    #39847 were `[authoritative]`, which means the tier carried no signal and the slots
+    went to emoji from the same people who wrote the verdict."""
+    pr = fake.add_pr(1)
+    for i in range(30):
+        fake.add_comment(pr, 100 + i, f"chatter {i}", created_at=f"2026-01-01T00:{i:02d}:00Z")
+    fake.add_review(
+        pr, 900, "revert this for models that do not need it", submitted_at="2026-01-01T00:15:00Z"
+    )
+    _index(engine, fake, 1)
+
+    view = open_backend(engine).thread(REPO, 1)
+
+    assert view is not None
+    assert any("revert this" in hit.snippet for hit in view.comments)
+
+
+def test_a_short_thread_is_returned_whole(engine: Engine, fake: FakeGitHub) -> None:
+    """The sample only applies where there is something to sample."""
+    pr = fake.add_pr(1)
+    for i in range(4):
+        fake.add_comment(pr, 100 + i, f"comment {i}", created_at=f"2026-01-01T00:{i:02d}:00Z")
+    _index(engine, fake, 1)
+
+    view = open_backend(engine).thread(REPO, 1)
+
+    assert view is not None
+    assert len(view.comments) == 4
+    assert view.total_documents == 4
+
+
+def test_one_comment_is_one_hit_however_many_chunks_it_became(
+    engine: Engine, fake: FakeGitHub
+) -> None:
+    """A 9,827-character comment is several documents, and two of them came back as two
+    `[authoritative]` hits with one URL -- which reads as two people agreeing, and cost
+    two of ten slots (huggingface/ghlore#18). One slot, and it says it is a passage.
+    """
+    pr = fake.add_pr(1)
+    long_comment = "\n\n".join(f"paragraph {i} about rotary embeddings" for i in range(400))
+    fake.add_comment(pr, 100, long_comment)
+    fake.add_comment(pr, 101, "a short one about rotary embeddings")
+    _index(engine, fake, 1)
+
+    view = open_backend(engine).thread(REPO, 1, focus="rotary embeddings")
+
+    assert view is not None
+    ids = [hit.source_id for hit in view.comments]
+    assert len(ids) == len(set(ids)), "no comment appears twice"
+    urls = [hit.url for hit in view.comments]
+    assert len(urls) == len(set(urls)), "and no URL appears twice"
+    chunked = next(hit for hit in view.comments if hit.source_id == "100")
+    assert chunked.passages > 1, "the hit knows it is one passage of a longer comment"
+    # And the thread's own count is comments, not documents: the long one is one comment.
+    assert view.total_documents == 2
 
 
 # -- which engine answered -------------------------------------------------

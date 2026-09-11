@@ -365,7 +365,7 @@ def keep_versions(
 #: the tuple, and :func:`reconcile_signals` compares sets rather than keys. A duplicate is
 #: unrepresentable rather than rejected -- both sides of that comparison are sets.
 SIGNAL_TABLES: tuple[tuple[str, Any, tuple[str, ...]], ...] = (
-    ("files", s.thread_files, ("path", "change_type")),
+    ("files", s.thread_files, ("path", "change_type", "source")),
     ("symbols", s.thread_symbols, ("symbol", "path", "symbol_type")),
     ("errors", s.thread_errors, ("exception_type", "message_norm")),
     ("tests", s.thread_tests, ("test_id", "test_function")),

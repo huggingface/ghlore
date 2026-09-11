@@ -29,6 +29,7 @@ import json
 import os
 import sys
 from typing import Any
+from urllib.parse import urlsplit
 
 from ghlore import __version__
 from ghlore.code.api import MissingParser
@@ -441,16 +442,7 @@ def _call(
             timeout=30.0,
         )
     except httpx.HTTPError as exc:
-        # Three causes, one message, because the symptom does not distinguish them: the
-        # deployment sits behind an *internal* load balancer, so from outside the VPN this
-        # is a timeout against a private address and looks exactly like a daemon that is
-        # down.
-        raise SystemExit(
-            f"ghlore: cannot reach {base} ({exc.__class__.__name__}). "
-            f"The deployment is VPN-internal — check the VPN first. Otherwise point "
-            f"{API_ENV} at your own `ghlored serve`, or port-forward the deployment: "
-            f"`kubectl -n ghlore port-forward deploy/ghlore 8080:8080`."
-        ) from None
+        raise SystemExit(f"ghlore: {_unreachable(base, exc)}") from None
 
     if response.status_code == UPGRADE_REQUIRED:
         # The daemon caught the version difference. It composed the sentence, because it
@@ -494,6 +486,38 @@ def _call(
             f"ghlore: {base}{path} returned {response.status_code}: {_detail(response)}"
         )
     return dict(response.json())
+
+
+def _unreachable(base: str, exc: Exception) -> str:
+    """Why nothing answered, told apart by *which* address did not answer.
+
+    Two situations wear the same symptom and take opposite next actions. The deployment
+    sits behind an **internal** load balancer, so from outside the VPN it is a timeout
+    against a private address and looks exactly like a daemon that is down. A loopback
+    address is the other one: nothing is listening because the caller pointed
+    ``GHLORE_API`` at a daemon they have not started -- and a client-only install cannot
+    start one, which is what turned a good error message into a dead end
+    (huggingface/ghlore#19). So the remedy offered names the extra, and names the way out
+    that needs no daemon at all.
+    """
+    why = f"cannot reach {base} ({exc.__class__.__name__})"
+    if _is_loopback(base):
+        return (
+            f"{why}. That is a local address, so nothing is listening on it: {API_ENV} "
+            f"points at a daemon you have not started. Start one -- `ghlored serve` needs "
+            f"`pip install 'ghlore[server]'`, which the client install does not carry -- "
+            f"or unset {API_ENV} to use the deployment at {DEFAULT_API}."
+        )
+    return (
+        f"{why}. The deployment is VPN-internal — check the VPN first. Otherwise point "
+        f"{API_ENV} at your own `ghlored serve`, or port-forward the deployment: "
+        f"`kubectl -n ghlore port-forward deploy/ghlore 8080:8080`."
+    )
+
+
+def _is_loopback(base: str) -> bool:
+    host = urlsplit(base).hostname or ""
+    return host in ("127.0.0.1", "::1", "localhost") or host.startswith("127.")
 
 
 def _detail(response: Any) -> str:

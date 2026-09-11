@@ -12,7 +12,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from sqlalchemy import Connection, Engine, func, insert, select, text
+from sqlalchemy import Connection, Engine, func, insert, inspect, select, text
 
 from ghlore.store.dialect import utcnow
 from ghlore.store.schema import (
@@ -197,6 +197,20 @@ def _link_claims(conn: Connection) -> None:
     thread_links.create(bind=conn)
 
 
+def _file_provenance(conn: Connection) -> None:
+    """``thread_files.source`` (huggingface/ghlore#17).
+
+    A column added to an existing table, so ``create_all`` will not do it -- the table has
+    been there since step 1. Portable ``ADD COLUMN``, nullable, no backfill: the value is
+    a **derived** one, so every existing row gets it from the next ``ghlored derive``, and
+    until then a null reads as "this index predates the split" rather than as a claim
+    about where the path came from. :meth:`SearchBackend.thread` says exactly that.
+    """
+    if "source" in {column["name"] for column in inspect(conn).get_columns("thread_files")}:
+        return
+    conn.execute(text("ALTER TABLE thread_files ADD COLUMN source TEXT"))
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[Connection], None]], ...] = (
     (1, "portable_core", _portable_core),
     (2, "postgres_search_layer", _postgres_search_layer),
@@ -204,6 +218,7 @@ MIGRATIONS: tuple[tuple[int, str, Callable[[Connection], None]], ...] = (
     (4, "sampled_floor", _sampled_floor),
     (5, "document_history", _document_history),
     (6, "link_claims", _link_claims),
+    (7, "file_provenance", _file_provenance),
 )
 
 

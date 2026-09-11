@@ -123,7 +123,19 @@ def hit_json(hit: Hit, *, compact: bool = False) -> dict[str, Any]:
         "trust": hit.trust,
         "age": hit.age,
         "snippet": hit.snippet,
+        # Which comment, and which piece of it (huggingface/ghlore#18). `url` is not an
+        # identity: a chunk of a comment carries the comment's URL, so two hits from one
+        # 9,827-character comment were indistinguishable from two people agreeing.
+        # `document_id` is stable across rebuilds -- it is GitHub's id plus the chunk --
+        # where the row's primary key is not.
+        "document_id": f"{hit.source_type}:{hit.source_id}:{hit.chunk_index}",
+        "source_id": hit.source_id,
+        "chunk_index": hit.chunk_index,
     }
+    # Absent rather than 1 where nobody counted: corpus-wide search does not pay for the
+    # aggregate, and "1 of 1" would be a claim it cannot make.
+    if hit.passages:
+        out["passages"] = hit.passages
     if not compact:
         out["score"] = round(hit.score, 6)
         out["breakdown"] = {k: round(v, 6) for k, v in hit.breakdown.items()}
@@ -178,10 +190,20 @@ def thread_json(view: ThreadView, *, compact: bool = False) -> dict[str, Any]:
         # serves the rest; these two say whether there is a rest.
         "body_chars": view.body_chars,
         "body_truncated": view.body_truncated,
-        "files": list(view.files),
-        # The denominator of the changed-file list. A truncated list must never be able to
-        # answer a membership question: `files_collected < files_total` means a path that
-        # is absent here may still have been touched.
+        # Two keys, never one. Presence in `files_changed` says the thread changed the
+        # path; presence in `files_mentioned` says somebody typed it, which is not the
+        # same claim and was indistinguishable while both shared an array
+        # (huggingface/ghlore#17).
+        "files_changed": list(view.files_changed),
+        # Also the diff, and also not part of the collected page: an inline review comment
+        # can only hang on a changed file, so this recovers paths past the 100-row cap.
+        "files_anchored": list(view.files_anchored),
+        "files_mentioned": list(view.files_mentioned),
+        # The denominator of the changed-file list, and `len(files_changed)` is its
+        # numerator -- they are the same quantity, which the old bare count was not. A
+        # truncated list must never be able to answer a membership question:
+        # `files_collected < files_total` means a path that is absent may still have been
+        # touched.
         "files_total": view.files_total,
         "files_collected": view.files_collected,
         "links": [dict(link) for link in view.links],
@@ -190,7 +212,13 @@ def thread_json(view: ThreadView, *, compact: bool = False) -> dict[str, Any]:
         # comments as the whole argument.
         "comments": [hit_json(hit, compact=compact) for hit in view.comments],
         "comments_returned": len(view.comments),
+        # Comments, not documents: a long comment is several documents and counting rows
+        # called one comment two (huggingface/ghlore#18).
         "comments_total": view.total_documents,
+        # HOW those comments were chosen. A positional sample and a ranked top ten look
+        # identical on the page, and the first five and last five of a 97-comment thread
+        # were read as its ten best (huggingface/ghlore#16).
+        "selection": view.selection,
         # A focus orders the comments and never selects them, so the count that matters is
         # how many carried every term: zero next to ten returned comments says "your
         # question matched nothing, this is the thread in order" rather than "nothing here".

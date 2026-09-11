@@ -10,7 +10,7 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
-from sqlalchemy import Engine, delete, func, insert, select
+from sqlalchemy import Engine, delete, func, insert, select, text
 
 from ghlore.store import repository as repo_layer
 from ghlore.store import schema as s
@@ -40,6 +40,39 @@ def test_migrate_is_idempotent(engine: Engine) -> None:
     # layer is per-dialect, and a skipped step still has to be recorded or it is retried
     # for ever.
     assert state["applied"] == [version for version, _name, _step in MIGRATIONS]
+
+
+def test_the_file_provenance_column_lands_on_a_database_that_predates_it(
+    engine: Engine,
+) -> None:
+    """Step 7 is an ``ALTER TABLE`` rather than a ``create_all``: ``thread_files`` has
+    existed since step 1, so a new column on it reaches an existing index only through its
+    own step -- and has to be a no-op on a fresh one, where step 1 just created it with
+    the column already there (huggingface/ghlore#17).
+    """
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE thread_files"))
+        conn.execute(
+            text("CREATE TABLE thread_files (thread_id BIGINT, path TEXT, change_type TEXT)")
+        )
+
+    _file_provenance_step()(engine)
+    _file_provenance_step()(engine)  # idempotent: the column is checked for, not assumed
+
+    with engine.connect() as conn:
+        conn.execute(select(s.thread_files.c.source))
+
+
+def _file_provenance_step():
+    """The step itself, run outside :func:`migrate` because the fixture has already
+    recorded every version as applied."""
+    step = dict((version, function) for version, _name, function in MIGRATIONS)[7]
+
+    def run(engine: Engine) -> None:
+        with engine.begin() as conn:
+            step(conn)
+
+    return run
 
 
 def test_surrogate_keys_autoincrement(engine: Engine) -> None:

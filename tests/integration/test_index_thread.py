@@ -116,9 +116,12 @@ def test_extraction_fills_the_signal_tables_from_the_thread_it_derived(
 
     _index(engine, fake, 1)
 
+    # Both paths came out of prose -- a traceback frame and a node id -- so both are
+    # `mentioned`, which is what keeps them out of "what this pull request changed"
+    # (huggingface/ghlore#17).
     assert _signal_rows(engine, s.thread_files) == [
-        ("src/mod.py", None),
-        ("tests/test_mod.py", None),
+        ("src/mod.py", None, "mentioned"),
+        ("tests/test_mod.py", None, "mentioned"),
     ]
     assert ("forward", "src/mod.py", "frame") in _signal_rows(engine, s.thread_symbols)
     assert _signal_rows(engine, s.thread_errors) == [("ValueError", "bad <n> shapes")]
@@ -188,7 +191,7 @@ def test_editing_a_comment_moves_only_the_signals_it_changed(
     comment["body"] = "and utils/other.py"
     result = _index(engine, fake, 1)
 
-    assert [path for path, _change in _signal_rows(engine, s.thread_files)] == [
+    assert [row[0] for row in _signal_rows(engine, s.thread_files)] == [
         "src/mod.py",
         "utils/other.py",
     ]
@@ -247,7 +250,9 @@ def test_the_per_pr_pass_supplies_the_changed_files_and_the_commits(
         )
         derive_thread(conn, REPO, 1)
 
-    assert _signal_rows(engine, s.thread_files) == [("src/mod.py", "MODIFIED")]
+    # `changed`: the per-PR pass's diff, which is the only source that answers "did
+    # this thread touch it?" (huggingface/ghlore#17).
+    assert _signal_rows(engine, s.thread_files) == [("src/mod.py", "MODIFIED", "changed")]
     assert _signal_rows(engine, s.thread_commits) == [("abc1234", "fix the mask")]
 
 

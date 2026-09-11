@@ -150,6 +150,30 @@ answers word for word still comes back as that thread's ten most relevant commen
 count says how many carried every term — `0 of 30` next to ten comments means "nothing
 matched your wording, here is the thread in order" rather than "nothing here".
 
+**Without a focus you get a sample, and the page says so.** Ten of eighty-nine comments
+cannot be a ranking when nothing was asked, so the unfocused page is the first two, the
+last two, and six spread across everything between — reviews first, because a review with
+a state is an act and `🤗` is not:
+
+```
+-- 10 of 89 comments, SAMPLED not ranked: the first and last few and a spread of the middle --
+(79 not shown: a thread is never returnable in full. `--focus "<what you care about>"` ranks all of them.)
+```
+
+That wording is the fix for a real misreading: a bare `-- 10 of 89 comments --` was read as
+the ten *best*, so the agent concluded the thread held nothing further — while the review
+that answered its question sat at position 51 of 97. **If you have a question, pass
+`--focus`;** the sample is for orientation, not for deciding.
+
+**A long comment comes back as one hit, marked.** GitHub comments are chunked into several
+indexed documents, and two chunks of one comment used to arrive as two hits with the same
+URL, author and tier — which reads as two people agreeing. Now they collapse into one slot,
+and a hit that is a piece of something longer says which piece:
+
+```
+1. huggingface/transformers#39847 pr  [authoritative]  12mo  issue_comment  @zucchini-nlp  (passage 4 of 7 in this comment)
+```
+
 A 200-comment thread has no full form; `search` is capped at 10 hits and 400 characters of
 snippet. The caps are the contract, not a default (§6). The *body* is the exception, and
 only on request: `--full` serves the opening post whole, because an issue template spends
@@ -159,6 +183,30 @@ starts after it.
 ```bash
 ghlore thread 48630 --full            # the whole opening post, reproduction included
 ```
+
+### "Did this pull request touch that file?"
+
+Read the right list. A thread's paths come from three places and they are three keys, never
+one:
+
+```
+changed files: 100 of 323 collected. TRUNCATED: a path that is absent here may still have been touched
+  src/transformers/modeling_rope_utils.py, …
+  + 2 more the diff must contain, from the files inline review comments are anchored to (not part of the collected page)
+mentioned in the discussion: 5 — named by somebody, NOT the diff. A bare filename here is not evidence the thread changed it
+  config.json, modeling_rope_utils.py, …
+```
+
+- **changed** is the diff, collected 100 rows at a time by the per-PR pass. **Absence
+  proves nothing** while it says TRUNCATED.
+- **anchored** is also the diff — GitHub will not anchor an inline review comment anywhere
+  else — and is the one source that can name a path the 100-row cap dropped.
+- **mentioned** is prose: a bare basename, a traceback's path, a file somebody merely
+  brought up. `config.json` above is named in `huggingface/transformers#39847`'s discussion
+  and is **not** in its 323-file diff. Presence here is not evidence of a change.
+
+Merged into one array — which is what it used to be — that last line answered a membership
+question with a wrong yes, and the same file appeared twice in two different spellings.
 
 **`--repo` is required on a bare number when more than one repository is in scope.** The
 deployment indexes two, so `ghlore thread 47720` there answers
@@ -310,3 +358,31 @@ other — an old client would otherwise get a well-formed answer missing whateve
 not know to ask for, which is the one failure nothing downstream can detect. Do what the
 message says. If it instead says the daemon is **behind**, the client is fine and the
 *deployment* is the stale thing: redeploy it rather than downgrading.
+
+## Parsing the output
+
+With no MCP server, stdout is the API, so what it prints is a contract rather than a
+rendering — and the contract is the same whether a person or a pipe is reading. **There is
+no TTY branch and there will not be one:** the text an agent reads and the text a person
+inspects have to be the same string, which is the same reason the renderer is server-side
+and shared with the web UI. A quiet mode for pipes would make the version nobody looks at
+the version everybody consumes.
+
+**Prefer `--json`.** It carries everything the text does and nothing a caller has to
+un-format: the comments array, `body_chars`/`body_truncated`, the three file lists,
+`files_total`/`files_collected`, `comments_total`, `selection`, per-hit `score` with its
+`breakdown`, and each hit's `document_id`, `source_id`, `chunk_index` and `passages`.
+`--json` and `--compact` are accepted on either side of the verb.
+
+If you do read the text, these hold within a version — and the version is enforced on every
+call, so "within a version" is something you can rely on rather than hope for:
+
+- one blank-line-separated block per hit, `N. repo#number type  [tier]  age  source_type
+  @author` first, then the quoted title and snippet, then the URL;
+- every line of retrieved prose is prefixed `> `, and no line of ours ever is, so an
+  unmarked line is always `ghlore` speaking;
+- the whole page sits inside `<<<GHLORE-UNTRUSTED>>>` … `<<<GHLORE-UNTRUSTED-END>>>`;
+- counts and caveats are prose on their own line (`-- 10 of 89 comments … --`,
+  `changed files: …`, `(body truncated: …)`), and a caveat is never dropped for brevity;
+- no score is printed. The order is the ranking, and the number's scale is a property of
+  the backend — it is in `--json` for whoever is tuning weights.

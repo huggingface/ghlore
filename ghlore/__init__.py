@@ -9,4 +9,4 @@
 #: a wire payload, a renderer, a CLI flag -- because the client and the daemon must run
 #: the same version to talk at all (:mod:`ghlore.wire`), which makes this string the
 #: compatibility contract rather than a label.
-__version__ = "0.3.0"
+__version__ = "0.3.1"
