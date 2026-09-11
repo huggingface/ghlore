@@ -51,7 +51,7 @@ def test_code_verbs_without_a_parser_give_an_install_hint(monkeypatch, tmp_path,
 )
 def test_every_documented_verb_is_registered(verb: str) -> None:
     actions = [a for a in cli.build_parser()._actions if hasattr(a, "choices") and a.choices]
-    assert any(verb in a.choices for a in actions), f"{verb} is in the README but not in the parser"
+    assert any(verb in a.choices for a in actions), f"{verb} is documented but not in the parser"
 
 
 @pytest.mark.parametrize(
