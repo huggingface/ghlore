@@ -314,7 +314,7 @@ whose every known field is right and whose new ones are simply absent: well-form
 plausible, silently incomplete (§13.3). `ghlore/wire.py`, and it is stdlib-only because
 invariant 1 puts it in the client's import graph.
 
-Two rules follow, and forgetting either is felt by somebody else:
+Three rules follow, and forgetting any of them is felt by somebody else:
 
 1. **Bump it in the same commit as any change a client can see** — a wire payload, a
    renderer, a CLI flag. The minor is the completed milestone; the patch is releases
@@ -322,6 +322,9 @@ Two rules follow, and forgetting either is felt by somebody else:
 2. **The bump and the deploy are one operation.** A bump on `main` that is not shipped
    breaks every client installed after the merge; they are told the deployment is behind,
    which is true and is nobody's intent.
+3. **Update the samples that print it in the same commit** — `docs/cli.md` and
+   `docs/how-search-works.md` each show a `ghlore status` page. Both had drifted by four
+   releases (#39); `test_prose_surfaces.py` now fails the bump until they follow.
 
 → `tests/unit/test_wire.py`, `tests/integration/test_api.py` ("the version handshake"),
 `tests/integration/test_cli_client.py`. A test client that talks to `/api/v1` sends the

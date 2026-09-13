@@ -36,6 +36,7 @@ CLI_MD = (ROOT / "docs" / "cli.md").read_text()
 SKILL_MD = (ROOT / "skills" / "search-project-history" / "SKILL.md").read_text()
 README = (ROOT / "README.md").read_text()
 AGENTS_MD = (ROOT / "docs" / "agents.md").read_text()
+HOW_SEARCH_WORKS = (ROOT / "docs" / "how-search-works.md").read_text()
 HELP = build_parser().format_help()
 HTML = page()
 
@@ -44,7 +45,11 @@ HTML = page()
 #: still examples, so they appear in the `--repo` check below.
 REFERENCES = [("help", HELP), ("page", HTML), ("cli.md", CLI_MD), ("skill", SKILL_MD)]
 
-EVERY_SURFACE = REFERENCES + [("README.md", README), ("agents.md", AGENTS_MD)]
+EVERY_SURFACE = REFERENCES + [
+    ("README.md", README),
+    ("agents.md", AGENTS_MD),
+    ("how-search-works.md", HOW_SEARCH_WORKS),
+]
 
 #: Phrasings that tell a reader a verb does not work yet. `precedent` is genuinely one of
 #: these; anything the parser ships is not.
@@ -139,7 +144,14 @@ def test_no_surface_calls_a_shipped_verb_unimplemented(name: str, text: str) -> 
 def test_no_surface_pins_a_stale_version(name: str, text: str) -> None:
     """A `ghlore status` sample is a reader's mental model of the command, and two of them
     had drifted by four releases -- one showing a capability set and a schema list the
-    daemon no longer has. Cheaper to fail at the bump than to audit the prose later."""
+    daemon no longer has (#39 item 5).
+
+    This one fires at the bump rather than at the audit, which is the point and is also the
+    friction: AGENTS.md's rule 2 says the bump and the deploy are one operation, so the
+    sample the deploy is about is being edited in the same breath either way. The message
+    has to say exactly that, because whoever trips it is mid-release and did not come here
+    to read a test.
+    """
     from ghlore import __version__
 
     stale = [
@@ -148,7 +160,11 @@ def test_no_surface_pins_a_stale_version(name: str, text: str) -> None:
         if re.match(r"\s*version\s+\d+\.\d+\.\d+\s*$", line) and __version__ not in line
     ]
 
-    assert not stale, f"{name} shows a version that is not {__version__}: {stale}"
+    assert not stale, (
+        f"{name} shows a `ghlore status` version that is not {__version__}: {stale}. "
+        f"Bumping `__version__` means updating the samples that print it -- "
+        f"docs/cli.md and docs/how-search-works.md -- in the same commit."
+    )
 
 
 def test_the_help_epilog_is_the_guidance_module() -> None:
