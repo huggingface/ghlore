@@ -227,6 +227,16 @@ class ThreadView:
     files_total: int | None = None
     files_collected: int = 0
     links: tuple[dict[str, Any], ...] = ()
+    #: Events, not prose (issue #22): ``state: closed`` cannot separate *withdrawn by its
+    #: author* from *closed as a duplicate*, and ``focus`` never finds a closure because
+    #: there is no comment to rank. A review decision with no comments at all is the other
+    #: half -- ``0 of 0 comments`` cannot say whether nobody looked or nobody typed.
+    state_reason: str | None = None
+    closed_by: str | None = None
+    merged: bool = False
+    review_decision: str | None = None
+    review_decision_by: tuple[str, ...] = ()
+    requested_reviewers: tuple[str, ...] = ()
     #: Comments, not documents. A long comment is several documents, so counting rows
     #: overstated the thread and made ``10 of 89 comments`` a count of two different
     #: things (huggingface/ghlore#18).
@@ -266,6 +276,10 @@ class Claim:
     merged: bool
     age: str
     relationship: str
+    #: How it stopped, not only that it did (issue #22).
+    state_reason: str | None = None
+    closed_by: str | None = None
+    review_decision: str | None = None
 
 
 @dataclass(frozen=True)

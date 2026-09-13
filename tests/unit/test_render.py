@@ -29,6 +29,35 @@ def _thread(**fields):
     return {"thread": {**base, **fields}}
 
 
+# -- events (issue #22) ----------------------------------------------------
+
+
+def test_a_closure_says_who_and_why() -> None:
+    out = render_thread(
+        _thread(author="truongsontung", state_reason="duplicate", closed_by="ydshieh")
+    )
+    assert "closed as duplicate by @ydshieh" in out
+
+
+def test_a_thread_closed_by_its_author_says_so() -> None:
+    out = render_thread(_thread(author="truongsontung", closed_by="truongsontung"))
+    assert "closed by its author" in out
+
+
+def test_a_review_decision_is_shown_with_no_comments_at_all() -> None:
+    """`-- 0 of 0 comments --` is true and cannot say whether nobody looked or nobody
+    typed. The decision is the only thing that separates them."""
+    out = render_thread(_thread(review_decision="approved", review_decision_by=["ydshieh"]))
+    assert "0 of 0 comments" in out
+    assert "review: approved by @ydshieh" in out
+
+
+def test_an_open_pull_request_nobody_has_reviewed_says_that() -> None:
+    out = render_thread(_thread(state="open", requested_reviewers=["vasqu"]))
+    assert "review: requested from @vasqu, no verdict yet" in out
+    assert "review: nobody has approved or blocked it" in render_thread(_thread(state="open"))
+
+
 # -- the changed-file list -------------------------------------------------
 
 
@@ -288,6 +317,35 @@ def test_inflight_says_which_pull_request_and_what_state_it_is_in() -> None:
     assert "1 thread claims to close owner/name#48630" in out
     assert "open draft" in out  # a stale draft and an approved PR imply opposite actions
     assert "> fix: respect partial_rotary_factor" in out
+
+
+def test_inflight_says_how_a_closed_claimant_was_closed() -> None:
+    """#22: two claimants both reading `closed` was the whole ambiguity. Withdrawn by its
+    author means review the survivor; ruled a duplicate means read the triage."""
+
+    def claim(**fields):
+        base = {
+            "repo": "owner/name",
+            "number": 48672,
+            "type": "pr",
+            "title": "fix it",
+            "author": "truongsontung",
+            "state": "closed",
+            "draft": False,
+            "merged": False,
+            "age": "26h",
+            "relationship": "closes",
+        }
+        return {**base, **fields}
+
+    page = {"repo": "owner/name", "number": 48630, "claims_total": 2, "links_indexed": 12}
+    withdrawn = render_inflight({**page, "claims": [claim(closed_by="truongsontung")]})
+    duplicate = render_inflight(
+        {**page, "claims": [claim(state_reason="duplicate", closed_by="ydshieh")]}
+    )
+
+    assert "closed by its author" in withdrawn
+    assert "closed (duplicate) by @ydshieh" in duplicate
 
 
 def test_inflight_distinguishes_a_clean_answer_from_an_unanswerable_one() -> None:

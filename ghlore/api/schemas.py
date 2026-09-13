@@ -163,6 +163,9 @@ def inflight_json(view: InflightView) -> dict[str, Any]:
                 "state": claim.state,
                 "draft": claim.draft,
                 "merged": claim.merged,
+                "state_reason": claim.state_reason,
+                "closed_by": claim.closed_by,
+                "review_decision": claim.review_decision,
                 "age": claim.age,
                 "relationship": claim.relationship,
             }
@@ -185,6 +188,13 @@ def thread_json(view: ThreadView, *, compact: bool = False) -> dict[str, Any]:
         "state": view.state,
         "age": view.age,
         "labels": list(view.labels),
+        # Events, not prose (issue #22).
+        "state_reason": view.state_reason,
+        "closed_by": view.closed_by,
+        "merged": view.merged,
+        "review_decision": view.review_decision,
+        "review_decision_by": list(view.review_decision_by),
+        "requested_reviewers": list(view.requested_reviewers),
         "body": view.body,
         # A cap a caller cannot see is a cap a caller reads as the whole document. `full`
         # serves the rest; these two say whether there is a rest.

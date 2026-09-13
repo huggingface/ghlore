@@ -458,7 +458,8 @@ class SearchBackend(ABC):
             # so this and `files_changed` are the same quantity counted once.
             collected = len(paths[CHANGED])
             # Indexed, not `row.metadata`: `Row` shadows it.
-            changed = (row._mapping["metadata"] or {}).get("changed_files")
+            meta = row._mapping["metadata"] or {}
+            changed = meta.get("changed_files")
             body, body_chars = self._body(conn, row.id, full=full)
             comments, total, matched, selection = self._comments(conn, row, focus)
 
@@ -482,6 +483,12 @@ class SearchBackend(ABC):
             files_total=int(changed) if changed is not None else None,
             files_collected=collected,
             links=links,
+            state_reason=meta.get("state_reason"),
+            closed_by=meta.get("closed_by"),
+            merged=row.merged_at is not None,
+            review_decision=meta.get("review_decision"),
+            review_decision_by=tuple(meta.get("review_decision_by") or ()),
+            requested_reviewers=tuple(meta.get("requested_reviewers") or ()),
             total_documents=total,
             selection=selection,
             focus=focus,
@@ -551,6 +558,9 @@ class SearchBackend(ABC):
                 merged=row.merged_at is not None,
                 age=render_age(row.created_at),
                 relationship=row.relationship,
+                state_reason=(row._mapping["metadata"] or {}).get("state_reason"),
+                closed_by=(row._mapping["metadata"] or {}).get("closed_by"),
+                review_decision=(row._mapping["metadata"] or {}).get("review_decision"),
             )
             for row in rows[:MAX_CLAIMS]
         )

@@ -99,6 +99,65 @@ def test_a_deleted_comment_is_removed_from_the_index(engine: Engine, fake: FakeG
     assert ("issue_comment", "101") in _documents(engine)
 
 
+# -- events (issue #22) ----------------------------------------------------
+
+
+def _thread_metadata(engine: Engine) -> dict:
+    with engine.connect() as conn:
+        return conn.execute(select(s.threads.c.metadata)).scalar_one()
+
+
+def test_a_closure_is_indexed_as_an_event(engine: Engine, fake: FakeGitHub) -> None:
+    """`state: closed` is the same string for withdrawn-by-author and closed-as-duplicate,
+    and a closure has no prose, so `--focus` can never recover the difference."""
+    pr = fake.add_pr(1, state="closed", author="truongsontung")
+    pr.payload["state_reason"] = "duplicate"
+    pr.payload["closed_by"] = {"login": "ydshieh", "id": 9, "type": "User", "site_admin": False}
+    fake.add_review(pr, 200, "", state="APPROVED", author="vasqu")
+
+    _index(engine, fake, 1)
+
+    meta = _thread_metadata(engine)
+    assert meta["state_reason"] == "duplicate"
+    assert meta["closed_by"] == "ydshieh"
+    assert meta["review_decision"] == "approved"
+    assert meta["review_decision_by"] == ["vasqu"]
+
+
+def test_the_latest_review_per_reviewer_is_the_one_that_counts(
+    engine: Engine, fake: FakeGitHub
+) -> None:
+    """One `changes_requested` outranks any number of approvals, and a reviewer who only
+    commented has neither approved nor blocked."""
+    pr = fake.add_pr(1)
+    fake.add_review(
+        pr, 200, "", state="APPROVED", author="vasqu", submitted_at="2026-01-02T00:00:00Z"
+    )
+    fake.add_review(pr, 201, "", state="APPROVED", author="ydshieh")
+    fake.add_review(
+        pr,
+        202,
+        "one more thing",
+        state="CHANGES_REQUESTED",
+        author="vasqu",
+        submitted_at="2026-01-03T00:00:00Z",
+    )
+    fake.add_review(pr, 203, "a thought", state="COMMENTED", author="stevhliu")
+
+    _index(engine, fake, 1)
+
+    meta = _thread_metadata(engine)
+    assert meta["review_decision"] == "changes_requested"
+    assert meta["review_decision_by"] == ["vasqu"]
+
+
+def test_a_thread_nobody_reviewed_carries_no_decision(engine: Engine, fake: FakeGitHub) -> None:
+    """Absent, not null: a key nothing wrote says the pass never saw one."""
+    fake.add_pr(1)
+    _index(engine, fake, 1)
+    assert "review_decision" not in _thread_metadata(engine)
+
+
 # -- signals (section 5.3) -------------------------------------------------
 
 

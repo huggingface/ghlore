@@ -100,6 +100,7 @@ def render_thread(payload: dict[str, Any], *, compact: bool = False) -> str:
     ]
     if thread.get("author"):
         lines.append(f"opened by @{thread['author']}")
+    lines += _event_lines(thread)
     if thread.get("labels"):
         lines.append(f"labels: {', '.join(thread['labels'])}")
     lines += _file_lines(thread)
@@ -164,6 +165,59 @@ def _passage_note(hit: dict[str, Any], page: list[dict[str, Any]]) -> str:
     if same > 1:
         parts.append(f"{same} of its passages are on this page")
     return "; ".join(parts)
+
+
+def _claim_state(claim: dict[str, Any]) -> list[str]:
+    """``closed (duplicate) by @maintainer`` rather than ``closed`` (issue #22).
+
+    Two claimants both reading ``closed`` is the state this verb is worst at: withdrawn by
+    its author means review the survivor, ruled a duplicate means read the triage.
+    """
+    if claim.get("merged"):
+        return [claim.get("state") or "", "merged"]
+    parts = [claim.get("state") or "", "draft" if claim.get("draft") else ""]
+    if claim.get("state") == "closed":
+        reason, closer = claim.get("state_reason"), claim.get("closed_by")
+        if reason and reason != "completed":
+            parts.append(f"({reason.replace('_', ' ')})")
+        if closer:
+            parts.append("by its author" if closer == claim.get("author") else f"by @{closer}")
+    elif claim.get("review_decision"):
+        parts.append(f"({claim['review_decision'].replace('_', ' ')})")
+    return parts
+
+
+def _event_lines(thread: dict[str, Any]) -> list[str]:
+    """How the thread got to its state, and what the reviewers settled (issue #22).
+
+    `closed` is the same word for *withdrawn by its author* and *ruled a duplicate*, which
+    imply opposite next actions; and a review decision is the only thing that tells
+    ``0 of 0 comments`` apart from *approved without typing*.
+    """
+    lines = []
+    if thread.get("merged"):
+        lines.append("merged")
+    elif thread.get("state") == "closed":
+        reason, closer = thread.get("state_reason"), thread.get("closed_by")
+        parts = ["closed"]
+        if reason and reason != "completed":
+            parts.append(f"as {reason.replace('_', ' ')}")
+        if closer:
+            parts.append("by its author" if closer == thread.get("author") else f"by @{closer}")
+        if len(parts) > 1:
+            lines.append(" ".join(parts))
+
+    decision, by = thread.get("review_decision"), thread.get("review_decision_by") or []
+    requested = thread.get("requested_reviewers") or []
+    if decision:
+        who = ", ".join(f"@{login}" for login in by)
+        lines.append(f"review: {decision.replace('_', ' ')}" + (f" by {who}" if who else ""))
+    elif requested:
+        who = ", ".join(f"@{login}" for login in requested)
+        lines.append(f"review: requested from {who}, no verdict yet")
+    elif thread.get("type") == "pr" and thread.get("state") == "open":
+        lines.append("review: nobody has approved or blocked it")
+    return lines
 
 
 def _link(link: dict[str, Any]) -> str:
@@ -264,15 +318,7 @@ def render_inflight(payload: dict[str, Any]) -> str:
     claim_word = "thread claims" if total == 1 else "threads claim"
     lines = [f"{total} {claim_word} to close {subject}", ""]
     for index, claim in enumerate(claims, start=1):
-        state = " ".join(
-            part
-            for part in (
-                claim.get("state"),
-                "draft" if claim.get("draft") else "",
-                "merged" if claim.get("merged") else "",
-            )
-            if part
-        )
+        state = " ".join(part for part in _claim_state(claim) if part)
         head = (
             f"{index}. {claim.get('repo')}#{claim.get('number')} {claim.get('type')}  "
             f"{state}  {claim.get('age')}  {claim.get('relationship')}"

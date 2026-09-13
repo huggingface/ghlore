@@ -119,7 +119,9 @@ def derive_thread(
         authority = repo_layer.get_authority(conn, repo)
 
     detail = _sole(raw.get("pr_details"))
-    thread_row, labels = _thread_row(repo, number, thread_type, thread_raw, detail)
+    thread_row, labels = _thread_row(
+        repo, number, thread_type, thread_raw, detail, reviews=raw.get("review") or []
+    )
     thread_id = repo_layer.upsert_thread(conn, thread_row)
     repo_layer.set_labels(conn, thread_id, labels)
 
@@ -167,6 +169,7 @@ def _thread_row(
     thread_type: str,
     raw: dict[str, Any],
     detail: dict[str, Any] | None = None,
+    reviews: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Build the ``threads`` row.
 
@@ -174,7 +177,10 @@ def _thread_row(
     ``/issues`` walk carries no diff stats and no ``merged_by``. It is a separate raw
     object rather than merged into the thread payload, because section 4 stores every
     object verbatim as fetched and two endpoints' output in one row is neither.
+
+    ``reviews`` are the staged review objects, read only for the decision they add up to.
     """
+    reviews = reviews or []
     labels = [
         label["name"] if isinstance(label, dict) else str(label)
         for label in raw.get("labels") or []
@@ -240,7 +246,86 @@ def _thread_row(
             row["metadata"]["merged_by"] = merged_by
         if detail.get("truncated_files") or detail.get("truncated_commits"):
             row["metadata"]["graphql_truncated"] = True
+    row["metadata"].update(_events(raw, detail, reviews))
     return row, labels
+
+
+# -- events (issue #22) -----------------------------------------------------
+
+# COMMENTED and PENDING decide nothing -- GitHub's own rule.
+_DECISIVE_REVIEW_STATES = frozenset({"APPROVED", "CHANGES_REQUESTED", "DISMISSED"})
+
+
+def _events(
+    raw: dict[str, Any], detail: dict[str, Any] | None, reviews: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """A closure is an event, not a comment, so no ranking finds it (issue #22).
+
+    Every field comes from a payload :func:`ghlore.github.fetch_thread.fetch_thread`
+    already stages, so a thread the poll has touched carries them and one known only from
+    a backfill's bulk ``/issues`` walk does not. Keys are omitted rather than nulled.
+    """
+    out: dict[str, Any] = {}
+    if raw.get("state_reason"):
+        out["state_reason"] = raw["state_reason"]
+    closed_by = (raw.get("closed_by") or {}).get("login")
+    if closed_by:
+        out["closed_by"] = closed_by
+    requested = [
+        login
+        for reviewer in raw.get("requested_reviewers") or []
+        if (login := (reviewer or {}).get("login"))
+    ]
+    if requested:
+        out["requested_reviewers"] = requested
+
+    decision, deciders = _review_decision(reviews, detail)
+    if decision:
+        out["review_decision"] = decision
+        out["review_decision_by"] = deciders
+    return out
+
+
+def _review_decision(
+    reviews: list[dict[str, Any]], detail: dict[str, Any] | None
+) -> tuple[str | None, list[str]]:
+    """Latest decisive review per reviewer; one ``changes_requested`` outranks any approvals.
+
+    Computed rather than read from GraphQL's ``reviewDecision``, which the per-PR pass only
+    fetches for merged pull requests -- absent on exactly the threads this is asked about.
+    """
+    latest: dict[str, tuple[Any, str]] = {}
+    for review in [*reviews, *_graphql_reviews(detail)]:
+        state = str(review.get("state") or "").upper()
+        if state not in _DECISIVE_REVIEW_STATES:
+            continue
+        login = (review.get("user") or {}).get("login")
+        if not login:
+            continue
+        submitted = parse_timestamp(review.get("submitted_at"))
+        previous = latest.get(login)
+        # No timestamp sorts oldest.
+        if previous is None or (
+            submitted is not None and (previous[0] is None or submitted >= previous[0])
+        ):
+            latest[login] = (submitted, state)
+
+    blocking = sorted(
+        login for login, (_at, state) in latest.items() if state == "CHANGES_REQUESTED"
+    )
+    if blocking:
+        return "changes_requested", blocking
+    approving = sorted(login for login, (_at, state) in latest.items() if state == "APPROVED")
+    if approving:
+        return "approved", approving
+    return None, []
+
+
+def _graphql_reviews(detail: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The per-PR pass's reviews, in the REST shape the rule above reads."""
+    if not detail:
+        return []
+    return [_review_from_graphql(node) for node in (detail.get("reviews") or {}).get("nodes") or []]
 
 
 def build_documents(
