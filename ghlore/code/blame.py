@@ -2,12 +2,13 @@
 
 Blame is the thing a cheap clone cannot give you: `--depth 200` is plenty to *read* a file
 and useless for attributing a line, so an agent minimising clone cost lands in a hole no
-local implementation can dig out of. The daemon's clone is blobless rather than shallow
-for exactly this reason -- the whole history is addressable.
+local implementation can dig out of. The daemon's clone is complete for exactly this
+reason -- the whole history is addressable, and locally.
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 
@@ -25,9 +26,13 @@ class BlameLine:
 
 def blame_line(root: str, path: str, line: int) -> BlameLine | None:
     """Who last touched ``line``, or ``None`` when the file or line is not there."""
+    # A query does not reach the network, and this is what makes that a property of the
+    # call rather than a claim about `CLONE_ARGS`: against a clone that is partial anyway,
+    # blame fails here instead of hanging on a fetch to github.com.
     done = subprocess.run(
         ["git", "blame", "-L", f"{line},{line}", "--porcelain", "--", path],
         cwd=root,
+        env={**os.environ, "GIT_NO_LAZY_FETCH": "1"},
         capture_output=True,
         text=True,
         timeout=TIMEOUT,

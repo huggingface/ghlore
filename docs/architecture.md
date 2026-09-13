@@ -1,7 +1,7 @@
 # Architecture
 
 ```text
-  GitHub REST + GraphQL          a blobless git clone
+  GitHub REST + GraphQL          a complete git clone
           |                              |
           |  poll (delta)                |  the lens: line -> name, at each
           |  + backfill (full history)   |  document's own commit; renames

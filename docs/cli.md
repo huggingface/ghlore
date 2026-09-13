@@ -316,9 +316,12 @@ file and cannot attribute a line, which is the hole every cost-minimising agent 
 ## The same questions, asked of the server (#7)
 
 `defs` and `refs` take `--repo`, and `symbol`, `grep` and `copies` only exist there: they
-read the daemon's **working clone**, a blobless clone per indexed repository checked out at
-HEAD. That is the half of a diagnosis that used to end in `git clone --filter=blob:none
---depth 200` and a throwaway script.
+read the daemon's **working clone**, one per indexed repository checked out at HEAD. That
+is the half of a diagnosis that used to end in a throwaway clone and a throwaway script.
+
+The clone carries its blobs. A filtered one is smaller and cannot answer `why`: blame walks
+a file's history, so it would fetch from the remote in the middle of a query -- or fail,
+where the remote will not serve an old object.
 
 ```
 $ ghlore copies compute_default_rope_parameters --repo huggingface/transformers

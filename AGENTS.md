@@ -82,7 +82,7 @@ there, not only the bot one — see §10, where the 18-vs-4,071 measurement is r
 | `cli.py` and `daemon.py` — every verb above; the rest exit with their milestone | |
 
 **Part of milestone 4's code lens landed** (issues #7 and #9): `ghlored clone` keeps a
-blobless working clone per repository at HEAD, `/api/v1/code/{defs,refs,symbol,grep,copies}`
+working clone per repository at HEAD -- complete, not filtered, so a query never fetches -- `/api/v1/code/{defs,refs,symbol,grep,copies}`
 answers from it, and `ghlore why PATH:LINE` blames the line and returns the pull request
 that carried the commit with the review comments anchored near it. HEAD is the depth these
 verbs need and settles nothing about §14.4(a): the *lens* — `enclosing_symbol` at the tree a

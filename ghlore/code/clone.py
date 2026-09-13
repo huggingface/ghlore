@@ -1,6 +1,6 @@
 """The working clone the daemon answers code questions from (section 1, issue #7).
 
-One blobless clone per indexed repository, checked out at HEAD and refreshed on a loop.
+One complete clone per indexed repository, checked out at HEAD and refreshed on a loop.
 HEAD is the right depth **for these verbs** and does not settle the build plan's open
 question 4(a): the lens needs the tree as it was when a comment was written, so it will
 want per-merge-commit checkouts. `grep`, `copies` and `symbol` ask *what does this code
@@ -24,10 +24,13 @@ log = logging.getLogger(__name__)
 ROOT_ENV = "GHLORE_CLONE_ROOT"
 DEFAULT_ROOT = "/var/lib/ghlore/clones"
 
-# Blobless, not shallow. `--depth` would make the tree unreadable past its horizon and
-# blame impossible at any depth (#9); `--filter=blob:none` fetches file contents on demand
-# and keeps the whole history addressable.
-CLONE_ARGS = ("--filter=blob:none", "--single-branch")
+# Complete, not shallow and not blobless. `--depth` makes blame impossible at any depth
+# (#9). `--filter=blob:none` was the first answer and the wrong one: blame walks back
+# through a file's history, so every `why` fetched blobs from the remote mid-query, and on
+# `transformers` the walk reached objects the promisor remote would not serve at all --
+# `modeling_llama.py:1` failed after 30s. Complete costs disk (transformers: 180MB ->
+# ~800MB) and buys a query that never touches the network.
+CLONE_ARGS = ("--single-branch",)
 
 TIMEOUT = 1800
 
@@ -69,7 +72,7 @@ class WorkingClones:
         """Clone if absent, fetch if present. Safe to call on every refresh."""
         target = self.path(repo)
         if (target / ".git").is_dir():
-            self._git(target, "fetch", "--filter=blob:none", "origin")
+            self._git(target, "fetch", "origin")
             self._git(target, "reset", "--hard", "FETCH_HEAD")
         else:
             target.parent.mkdir(parents=True, exist_ok=True)

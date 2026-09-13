@@ -17,6 +17,8 @@ from sqlalchemy import Engine, select
 from ghlore import __version__
 from ghlore.api.server import build_app
 from ghlore.api.tokens import Authenticator, Token
+from ghlore.code.blame import blame_line
+from ghlore.code.clone import CLONE_ARGS
 from ghlore.ingest.index_thread import index_thread
 from ghlore.store import schema as s
 from ghlore.wire import CLIENT_HEADER
@@ -158,6 +160,27 @@ def test_why_resolves_the_pull_request_from_a_staged_commit(client, engine, fake
     assert payload["number"] == 1
     assert payload["resolved_by"] == "commit"
     assert payload["thread"]["title"] == "the refactor"
+
+
+def test_a_query_never_fetches_from_the_remote(monkeypatch, clone_root) -> None:
+    """Blobless was the first answer and `why` paid for it: blame walks back through a
+    file's history, so every query fetched from the remote mid-answer, and on `transformers`
+    the walk reached objects it would not serve at all. Both halves are the property -- a
+    clone that carries its blobs, and a blame that refuses to fetch if one somehow does not.
+    """
+    assert not [arg for arg in CLONE_ARGS if arg.startswith("--filter")]
+
+    seen: dict[str, str] = {}
+    real = subprocess.run
+
+    def record(argv, **kwargs):
+        seen.update(kwargs.get("env") or {})
+        return real(argv, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", record)
+    blame_line(f"{clone_root}/{REPO.replace('/', '__')}", "src/modeling_llama.py", 2)
+
+    assert seen["GIT_NO_LAZY_FETCH"] == "1"
 
 
 def test_why_on_a_line_that_is_not_there_says_blame_has_nothing_to_read(client) -> None:

@@ -46,8 +46,8 @@ extractor and re-deriving costs minutes of local CPU instead of another day of A
 
 ## The working clone (issue #7)
 
-`symbol`, `grep`, `copies` and `defs`/`refs --repo` read a blobless clone per repository,
-checked out at HEAD. Create it **where `serve` runs** — that is the process answering them:
+`symbol`, `grep`, `copies` and `defs`/`refs --repo` read a clone per repository, checked out
+at HEAD and complete rather than filtered, so `why`'s blame never fetches mid-query. Create it **where `serve` runs** — that is the process answering them:
 
 ```bash
 export GHLORE_CLONE_ROOT=/var/lib/ghlore/clones   # default; a pod needs a volume for it
