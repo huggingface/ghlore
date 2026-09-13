@@ -12,12 +12,13 @@ import subprocess
 import pytest
 from fake_github import FakeGitHub
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 
 from ghlore import __version__
 from ghlore.api.server import build_app
 from ghlore.api.tokens import Authenticator, Token
 from ghlore.ingest.index_thread import index_thread
+from ghlore.store import schema as s
 from ghlore.wire import CLIENT_HEADER
 
 REPO = "owner/name"
@@ -116,6 +117,54 @@ def test_defs_and_refs_answer_from_the_clone(client) -> None:
         "/api/v1/code/refs", params={"symbol": "compute_default_rope_parameters"}
     ).json()
     assert len(refs["hits"]) == 2
+
+
+# -- why PATH:LINE (issue #9) ----------------------------------------------
+
+
+def test_why_names_the_pull_request_that_last_changed_the_line(client, engine, fake) -> None:
+    """`git blame` gives the commit; the index gives the argument. The link is
+    `thread_commits`, and the squash-merge subject is the fallback."""
+    response = client.get("/api/v1/why", params={"path": "src/modeling_llama.py", "line": 2})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["blame"]["sha"]
+    assert "partial_rotary_factor" in payload["blame"]["text"]
+    # Nothing in this index carries that commit, and saying so is the answer -- not an
+    # error, and not a silently empty page.
+    assert payload["number"] is None
+
+
+def test_why_resolves_the_pull_request_from_a_staged_commit(client, engine, fake) -> None:
+    sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=f"{client.app.state.deps.clones.path(REPO)}",
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    with engine.begin() as conn:
+        conn.execute(
+            s.thread_commits.insert().values(
+                thread_id=conn.execute(select(s.threads.c.id)).scalar_one(),
+                sha=sha,
+                message="the refactor",
+            )
+        )
+
+    payload = client.get("/api/v1/why", params={"path": "src/modeling_llama.py", "line": 2}).json()
+
+    assert payload["number"] == 1
+    assert payload["resolved_by"] == "commit"
+    assert payload["thread"]["title"] == "the refactor"
+
+
+def test_why_on_a_line_that_is_not_there_says_blame_has_nothing_to_read(client) -> None:
+    response = client.get("/api/v1/why", params={"path": "src/nope.py", "line": 4})
+
+    assert response.status_code == 404
+    assert "blame has nothing to read" in response.json()["detail"]
 
 
 def test_a_repository_with_no_clone_says_so_rather_than_failing(engine: Engine, tmp_path) -> None:

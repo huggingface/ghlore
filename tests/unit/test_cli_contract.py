@@ -78,15 +78,31 @@ def test_the_subparser_alias_does_not_overwrite_a_flag_given_before_the_verb() -
     assert args.json is False
 
 
-@pytest.mark.parametrize("verb", ["precedent", "why"])
+@pytest.mark.parametrize("verb", ["precedent"])
 def test_an_unimplemented_verb_says_so_in_its_help(verb: str) -> None:
-    """An agent builds its plan from `--help`; `why` in particular sounds like the most
-    valuable verb in the tool, so it gets tried first."""
+    """An agent builds its plan from `--help`, so a stub has to say it is one. `why` was
+    on this list until #9 built it."""
     parser = cli.build_parser()
     subparsers = next(a for a in parser._actions if hasattr(a, "choices") and a.choices)
     entry = next(c for c in subparsers._choices_actions if c.dest == verb)
 
     assert "NOT IMPLEMENTED" in (entry.help or "")
+
+
+def test_why_is_implemented_and_takes_a_path_and_a_line() -> None:
+    args = cli.build_parser().parse_args(["why", "src/model.py:90"])
+
+    assert args.location == "src/model.py:90"
+    assert "NOT IMPLEMENTED" not in (
+        next(
+            c
+            for c in next(
+                a for a in cli.build_parser()._actions if hasattr(a, "choices") and a.choices
+            )._choices_actions
+            if c.dest == "why"
+        ).help
+        or ""
+    )
 
 
 def test_precedent_takes_a_limit_like_every_other_listing_verb() -> None:

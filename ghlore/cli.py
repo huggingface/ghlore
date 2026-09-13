@@ -35,7 +35,13 @@ from urllib.parse import urlsplit
 
 from ghlore import __version__
 from ghlore.code.api import MissingParser
-from ghlore.render import render_inflight, render_search, render_status, render_thread
+from ghlore.render import (
+    render_inflight,
+    render_search,
+    render_status,
+    render_thread,
+    render_why,
+)
 from ghlore.wire import CLIENT_HEADER, SERVER_HEADER, UPGRADE_REQUIRED, explain
 
 API_ENV = "GHLORE_API"
@@ -54,7 +60,7 @@ TOKEN_ENVS = ("GHLORE_TOKEN", "GHLORE_API_TOKEN")
 # actionable only if the message says so, and :func:`_call` does.
 DEFAULT_API = "https://ghlore.huggingface.tech"
 
-_MILESTONE = {"precedent": 4, "why": 4, "map": 2, "defs": 2, "refs": 2}
+_MILESTONE = {"precedent": 4, "map": 2, "defs": 2, "refs": 2}
 
 
 def _also_after_the_verb(parser: argparse.ArgumentParser, *flags: str) -> None:
@@ -173,9 +179,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     w = sub.add_parser(
         "why",
-        help=("(NOT IMPLEMENTED YET) review comments left on this line's code when it was written"),
+        help="the pull request that last changed this line, and what reviewers said on it",
     )
     w.add_argument("location", metavar="PATH:LINE")
+    w.add_argument("--repo", help="OWNER/NAME; needed when the token can see several")
     _also_after_the_verb(w, "--json")
 
     st = sub.add_parser("status", help="index freshness and coverage")
@@ -236,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         "search": _search,
         "thread": _thread,
         "inflight": _inflight,
+        "why": _why,
         "status": _status,
         "map": _map,
         "defs": _defs,
@@ -339,6 +347,27 @@ def _inflight(args: argparse.Namespace) -> int:
         lambda: (
             payload.get("rendered") or render_inflight(payload, presentation=_presentation(args))
         ),
+    )
+
+
+def _why(args: argparse.Namespace) -> int:
+    """`git blame` gives the commit; this gives the argument (issue #9)."""
+    path, _, line = args.location.rpartition(":")
+    if not path or not line.isdigit():
+        raise SystemExit(f"ghlore why: expected PATH:LINE, got {args.location!r}")
+    params = {
+        "path": path,
+        "line": line,
+        "render": str(not args.json).lower(),
+        "presentation": str(_presentation(args)).lower(),
+    }
+    if args.repo:
+        params["repo"] = args.repo
+    payload = _call(args, "GET", "/api/v1/why", params=params)
+    return _emit(
+        args,
+        payload,
+        lambda: payload.get("rendered") or render_why(payload, presentation=_presentation(args)),
     )
 
 

@@ -284,6 +284,35 @@ project.
 
 ---
 
+## "Why is this line like this?" (#9)
+
+```
+$ ghlore why src/transformers/models/gpt_neox_japanese/modeling_gpt_neox_japanese.py:90 \
+    --repo huggingface/transformers
+```
+
+`git blame` gives the commit; this gives the argument. The daemon blames the line in its
+working clone, resolves the commit to a pull request through `thread_commits` — falling
+back to the `(#1234)` squash-merge subject, which it labels as a guess — and returns the
+thread with the review comments **anchored on or near that line**. That last part is what
+blame cannot give and what a clone cannot be asked for.
+
+Anchors are matched within a window of lines rather than exactly: GitHub stores an anchor
+as a name and we store a line number, so an exact match would drop every comment on a file
+edited since.
+
+Two empty answers that are not the same, and the page says which:
+
+- **no pull request carries that commit** — it predates the index, or reached the branch
+  outside a pull request;
+- **a pull request, and nobody reviewed this line** — the argument exists, just not here;
+  `ghlore thread` reads the rest of it.
+
+`why` needs the working clone below, because blame does. A `--depth 200` clone can read a
+file and cannot attribute a line, which is the hole every cost-minimising agent falls into.
+
+---
+
 ## The same questions, asked of the server (#7)
 
 `defs` and `refs` take `--repo`, and `symbol`, `grep` and `copies` only exist there: they

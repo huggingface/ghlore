@@ -21,6 +21,7 @@ score what the filter would not have matched.
 from __future__ import annotations
 
 import operator
+import re
 from abc import ABC, abstractmethod
 from functools import reduce
 from typing import Any
@@ -54,6 +55,7 @@ from ghlore.search.queries import (
     InflightView,
     SearchQuery,
     ThreadView,
+    WhyView,
     admissible_trust,
     render_age,
     snippet,
@@ -495,6 +497,55 @@ class SearchBackend(ABC):
             focus_matched=matched,
         )
 
+    # -- why is this line like this (issue #9) ----------------------------
+
+    def why(
+        self,
+        repo: str,
+        path: str,
+        line: int,
+        *,
+        sha: str,
+        summary: str = "",
+        window: int = 25,
+    ) -> WhyView:
+        """What the index knows about the commit blame named, and about this line.
+
+        ``git blame`` gives the commit; this gives the argument. The pull request is
+        resolved from ``thread_commits`` first and from the squash-merge convention
+        ``(#1234)`` in the summary second, because a commit staged by no per-PR pass is
+        common and answering "no idea" while the number is sitting in the subject is not.
+
+        Review comments are matched on the path and a window of lines around the anchor.
+        The anchor is a *name* in GitHub's payload and a line number in ours, so an exact
+        match would silently drop every comment written against a since-edited file --
+        which is most of them.
+        """
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                select(s.threads.c.github_number, s.threads.c.title)
+                .select_from(
+                    s.thread_commits.join(s.threads, s.thread_commits.c.thread_id == s.threads.c.id)
+                )
+                .where(s.threads.c.repo == repo, s.thread_commits.c.sha.like(f"{sha[:12]}%"))
+                .limit(1)
+            ).one_or_none()
+            number = int(row.github_number) if row else _number_from_summary(summary)
+            if number is None:
+                return WhyView(repo=repo, path=path, line=line, sha=sha, summary=summary)
+            anchored = tuple(_anchored(conn, number, path, line, window))
+        return WhyView(
+            repo=repo,
+            path=path,
+            line=line,
+            sha=sha,
+            summary=summary,
+            number=number,
+            resolved_by="commit" if row else "summary",
+            thread=self.thread(repo, number),
+            anchored=anchored,
+        )
+
     # -- what is already being worked on ---------------------------------
 
     def inflight(self, repo: str, number: int) -> InflightView:
@@ -718,6 +769,59 @@ class SearchBackend(ABC):
             if (row.source_type, row.source_id) not in chosen
         ]
         return rows + _ends(remainder, MAX_THREAD_COMMENTS - len(rows))
+
+
+_SQUASHED = re.compile(r"\(#(\d+)\)\s*$")
+
+
+def _number_from_summary(summary: str) -> int | None:
+    """``Fix the mask (#48672)`` -- the squash-merge convention, used as a fallback."""
+    match = _SQUASHED.search(summary or "")
+    return int(match.group(1)) if match else None
+
+
+def _anchored(conn: Any, number: int, path: str, line: int, window: int) -> list[dict[str, Any]]:
+    """Review comments hanging on this file within ``window`` lines of the anchor.
+
+    Filtered in Python rather than in SQL: the anchor lives in ``documents.metadata``, and
+    reaching into JSON is the one thing ``test_no_dialect_leak`` forbids the store from
+    doing. A thread's review comments are tens of rows, so the cost is nothing.
+    """
+    rows = conn.execute(
+        select(
+            s.documents.c.author,
+            s.documents.c.trust,
+            s.documents.c.url,
+            s.documents.c.body_text,
+            s.documents.c.metadata,
+            s.documents.c.github_created_at,
+        )
+        .select_from(s.documents.join(s.threads, s.documents.c.thread_id == s.threads.c.id))
+        .where(
+            s.threads.c.github_number == number,
+            s.documents.c.source_type == "review_comment",
+        )
+    ).all()
+
+    out = []
+    for row in rows:
+        meta = row._mapping["metadata"] or {}
+        if meta.get("path") != path:
+            continue
+        anchor = meta.get("line") or meta.get("original_line")
+        if anchor is not None and abs(int(anchor) - line) > window:
+            continue
+        out.append(
+            {
+                "author": row.author,
+                "trust": row.trust,
+                "url": row.url,
+                "line": anchor,
+                "age": render_age(row.github_created_at),
+                "text": row.body_text,
+            }
+        )
+    return out
 
 
 def _files_by_provenance(conn: Any, thread_id: int) -> dict[str, tuple[str, ...]]:

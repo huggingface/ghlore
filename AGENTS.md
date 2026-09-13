@@ -81,6 +81,15 @@ there, not only the bot one — see §10, where the 18-vs-4,071 measurement is r
 | `render.py` — one renderer for the CLI and the UI's raw view | |
 | `cli.py` and `daemon.py` — every verb above; the rest exit with their milestone | |
 
+**Part of milestone 4's code lens landed** (issues #7 and #9): `ghlored clone` keeps a
+blobless working clone per repository at HEAD, `/api/v1/code/{defs,refs,symbol,grep,copies}`
+answers from it, and `ghlore why PATH:LINE` blames the line and returns the pull request
+that carried the commit with the review comments anchored near it. HEAD is the depth these
+verbs need and settles nothing about §14.4(a): the *lens* — `enclosing_symbol` at the tree a
+comment was written against — still wants per-merge-commit checkouts. A repository with no
+clone answers 503; the conversation index never depends on a checkout (§14.4b). Still
+unbuilt in milestone 4: `precedents`, `ghlore precedent`, the §9 extension entry points.
+
 Tables that exist but nothing populates: `path_aliases`, `precedents`, `precedent_signals`.
 **`thread_links` is now written** (§13.3): the derive pass records "this pull request claims
 to close #N" and `ghlore inflight` walks it backwards. It used to be a foreign key to

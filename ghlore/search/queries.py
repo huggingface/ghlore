@@ -283,6 +283,31 @@ class Claim:
 
 
 @dataclass(frozen=True)
+class WhyView:
+    """Why one line is the way it is (issue #9).
+
+    ``git blame`` names the commit; everything else here is the argument that produced it.
+    ``number is None`` is a real answer -- the line's commit reached the tree through no
+    pull request this index holds -- and it has to be distinguishable from "nothing was
+    said", which is an empty ``anchored`` on a thread that exists.
+    """
+
+    repo: str
+    path: str
+    line: int
+    sha: str
+    summary: str = ""
+    number: int | None = None
+    #: ``commit`` when ``thread_commits`` held the sha, ``summary`` when only the
+    #: squash-merge convention did. The second is a guess from a string and says so.
+    resolved_by: str = ""
+    thread: ThreadView | None = None
+    #: The part `git blame` cannot give: what reviewers said *on this line* while it was
+    #: being written.
+    anchored: tuple[dict[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
 class InflightView:
     """What claims to close one thread, and whether the question could be answered.
 

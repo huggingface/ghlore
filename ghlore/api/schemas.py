@@ -23,6 +23,7 @@ from ghlore.search.queries import (
     Hit,
     InflightView,
     ThreadView,
+    WhyView,
 )
 
 
@@ -181,6 +182,29 @@ def inflight_json(view: InflightView) -> dict[str, Any]:
         "claims_returned": len(view.claims),
         "claims_total": view.total,
         "links_indexed": view.links_indexed,
+    }
+
+
+def why_json(view: WhyView, *, blame: Any) -> dict[str, Any]:
+    """``GET /api/v1/why`` -- the commit, the pull request, and what was said on the line.
+
+    ``number: null`` and an empty ``anchored`` are different answers: no pull request could
+    be resolved for the commit, versus one was and nobody reviewed this line.
+    """
+    return {
+        "repo": view.repo,
+        "path": view.path,
+        "line": view.line,
+        "blame": {
+            "sha": blame.sha,
+            "author": blame.author,
+            "summary": blame.summary,
+            "text": blame.text,
+        },
+        "number": view.number,
+        "resolved_by": view.resolved_by,
+        "thread": thread_json(view.thread) if view.thread else None,
+        "anchored": [dict(comment) for comment in view.anchored],
     }
 
 

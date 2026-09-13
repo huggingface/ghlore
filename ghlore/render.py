@@ -316,6 +316,64 @@ def _file_lines(thread: dict[str, Any]) -> list[str]:
     return lines
 
 
+def render_why(payload: dict[str, Any], *, presentation: bool = False) -> str:
+    """Why one line is the way it is (issue #9).
+
+    Blame's commit first, then the pull request that carried it, then the part blame
+    cannot give: what reviewers said *on this line* while it was being written.
+    """
+    blame = payload.get("blame") or {}
+    thread = payload.get("thread") or {}
+    lines = [
+        f"{payload.get('repo')} {payload.get('path')}:{payload.get('line')}",
+        quote(blame.get("text", "")),
+        "",
+        f"last changed in {blame.get('sha', '')[:12]} by {blame.get('author', 'someone')}",
+        quote(blame.get("summary", "")),
+    ]
+    if payload.get("number") is None:
+        lines.append(
+            "\nno pull request in this index carries that commit, so the argument behind "
+            "it is not retrievable here. It may predate the index, or have reached the "
+            "branch outside a pull request."
+        )
+        return envelope("\n".join(lines).rstrip())
+
+    guessed = (
+        " (from the commit subject, not a staged commit row)"
+        if (payload.get("resolved_by") == "summary")
+        else ""
+    )
+    lines += [
+        "",
+        f"{thread.get('repo')}#{payload['number']} {thread.get('state', '')}{guessed}",
+        quote(thread.get("title", "")),
+    ]
+    if thread.get("url"):
+        lines.append(thread["url"])
+    if thread.get("links"):
+        lines.append("links: " + ", ".join(_link(link) for link in thread["links"]))
+
+    anchored = payload.get("anchored") or []
+    lines += ["", f"-- {len(anchored)} review comment(s) on this line while it was written --"]
+    for index, comment in enumerate(anchored, start=1):
+        tier = TRUST_LABEL.get(str(comment.get("trust")), str(comment.get("trust")))
+        head = f"{index}. [{tier}]  {comment.get('age')}"
+        if comment.get("author"):
+            head += f"  @{comment['author']}"
+        if comment.get("line"):
+            head += f"  (line {comment['line']})"
+        lines += [head, quote(str(comment.get("text", "")))]
+        if comment.get("url"):
+            lines.append(f"   {comment['url']}")
+        lines.append("")
+    if not anchored and presentation:
+        lines.append(
+            "(nobody reviewed this line. `ghlore thread` reads the rest of the discussion.)"
+        )
+    return envelope("\n".join(lines).rstrip(), source=thread.get("url"))
+
+
 def render_inflight(payload: dict[str, Any], *, presentation: bool = False) -> str:
     """What already claims to close a thread.
 

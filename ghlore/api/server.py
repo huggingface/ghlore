@@ -40,14 +40,16 @@ from ghlore.api.schemas import (
     hit_json,
     inflight_json,
     thread_json,
+    why_json,
 )
 from ghlore.api.tokens import LABEL_SCOPE, Authenticator, AuthError, RateLimited, Token
+from ghlore.code.blame import blame_line
 from ghlore.code.clone import CloneUnavailable, WorkingClones
 from ghlore.code.defs import definitions
 from ghlore.code.refs import references
 from ghlore.code.survey import copies, grep, symbol_body
 from ghlore.code.walk import read
-from ghlore.render import render_inflight, render_search, render_thread
+from ghlore.render import render_inflight, render_search, render_thread, render_why
 from ghlore.search import QueryError, SearchQuery, expand, open_backend, search_expanded
 from ghlore.search.queries import HUMAN_TRUST, admissible_trust
 from ghlore.security.untrusted import NOTICE, scrub_tree
@@ -418,6 +420,36 @@ def build_app(
                     for body_hash, group in result.groups.items()
                 ],
             }
+        )
+
+    @app.get("/api/v1/why")
+    def why(
+        token: Caller,
+        path: str,
+        line: int,
+        repo: str | None = None,
+        render: bool = False,
+        presentation: bool = False,
+    ) -> Response:
+        """Why this line is the way it is (issue #9): blame, then the argument.
+
+        Blame here rather than in the backend: the clone is this layer's, and the query
+        layer must stay a database away from a subprocess.
+        """
+        name, root = _clone_root(token, repo)
+        found = blame_line(root, path, line)
+        if found is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"{path}:{line} is not in {name} at HEAD, so blame has nothing to read",
+            )
+        view = deps.backend.why(name, path, line, sha=found.sha, summary=found.summary)
+        payload = {"notice": NOTICE, **why_json(view, blame=found)}
+        return _json(
+            payload,
+            render=(lambda scrubbed: render_why(scrubbed, presentation=presentation))
+            if render
+            else None,
         )
 
     @app.post("/api/v1/precedent")
