@@ -1,27 +1,36 @@
 # ghlore — GitHub project memory
 
-**Every codebase has lore. Make it searchable.**
+**Every codebase has lore. Ask it, then check it against the code.**
 
 <img src="docs/ghlore.png" alt="logo" width="200">
 
-Index a repository's complete issue and pull-request history, and serve it back as
-searchable project memory for coding agents and humans.
+`ghlore` indexes a repository's complete issue and pull-request history and keeps a working
+clone beside it, both served over one HTTP API. Three questions, in the order an agent hits
+them:
 
-The knowledge that explains *why* a codebase is the way it is mostly does not live in the
-codebase. It lives in a review comment from three years ago: why a fallback cannot be
-removed, which approach was tried and rejected, what a maintainer made the last five
-contributors change. An agent fixing a bug cannot read any of it. `ghlore` makes it
-queryable.
+**1. Is somebody already doing this?** `inflight <issue>` — every open claimant, its state
+and its author, in one hop. The most expensive thing an agent does is patch something that
+is already in review.
 
-Two things make it answer questions an agent would otherwise answer badly:
+**2. Why is it like this?** Why a fallback cannot be removed, which approach was tried and
+rejected, what a maintainer made the last five contributors change — none of it is in the
+codebase. `thread`, `why PATH:LINE` and `search` return it at comment level with who said
+it attached, so `--trust authoritative` keeps only what someone with write access settled
+and machine authors are excluded by default. `search --symbol GemmaRotaryEmbedding` asks
+what has been *said* about a function — a question `grep` cannot answer.
 
-- **Symbols are indexed**, so `--symbol compute_default_rope_parameters` asks *what has been
-  said about this function* — a question `grep` cannot answer, because the answers are in
-  issues and reviews rather than in the tree. On the benchmark's `failure` slice `grep`
-  scores **0.000** and `ghlore` **1.000**.
-- **Every document carries who said it.** `--trust authoritative` keeps only what someone
-  with write access settled. Machine authors are excluded by default, because returning an
-  agent's own comment as prior discussion makes its unreviewed output its own evidence.
+**3. Is that still true?** `grep`, `symbol` and `copies` run against that clone at HEAD,
+server-side, no checkout on your side. A three-year-old review is a claim about code that
+has moved since.
+
+Threads tell you what people decided; the code verbs tell you whether it was true. A
+[contributor claim] confirmed by `grep` is stronger evidence than either alone — the
+argument for this over a search box.
+
+Six agents have run it cold on the same `transformers` bug, one per release, on `--help`
+alone and with no memory of the runs before. They filed 39 issues against the tool; most
+are fixed, each run checking the last one's from the outside.
+[#8](https://github.com/huggingface/ghlore/issues/8) is the record.
 
 ## Try it
 
@@ -31,11 +40,11 @@ export GHLORE_API=https://your-ghlore  # a running `ghlored serve`
 export GHLORE_REPO=owner/name          # the default for --repo
 export GHLORE_TOKEN=…                  # if that daemon requires one
 
+ghlore inflight 47720 --repo owner/name              # ask this one first
+ghlore why src/model.py:90 --repo owner/name         # what was said about this line
 ghlore search "AttributeError: 'NoneType' object has no attribute 'shape'" --kind failure
 ghlore search "why is this cast here" --kind rationale --file src/model.py
 ghlore search --symbol GemmaRotaryEmbedding          # every mention, exactly matched
-ghlore inflight 47720 --repo owner/name              # is somebody already fixing this?
-ghlore why src/model.py:90 --repo owner/name         # what was said about this line
 ghlore copies compute_default_rope_parameters --repo owner/name   # which copies diverge
 ```
 
@@ -55,7 +64,7 @@ already call an HTTP API.
 | **Comment-level results** | the matching document with its author, trust tier, age and URL — not a thread number to go re-read |
 | **Exact signals** | errors, files, symbols, test ids, shas, extracted at ingest and repeatable as filters |
 | **Trust tiers** | maintainer / contributor / bot, as a filter rather than a weight |
-| **Schema to join on** | "which threads touched this file", and a bug and its merged fix as one record |
+| **Schema to join on** | "which threads touched this file", and a bug and its merged fix as one record — `search --file` under-returns the newest PRs touching a path until [#48](https://github.com/huggingface/ghlore/issues/48) lands |
 | **The code, server-side** | `why PATH:LINE`, `grep`, `copies`, `symbol`, and `defs`/`refs` with `--repo`, against a working clone the daemon keeps |
 | **Throughput** | every query is a Postgres query and makes no GitHub request; ten agents in parallel cost the same as one |
 
