@@ -40,6 +40,12 @@ MAX_HITS_PER_THREAD = 3
 #: opening is reliably worth reading.
 MAX_THREAD_COMMENTS = 10
 MAX_BODY_CHARS = 800
+#: How far past :data:`MAX_BODY_CHARS` a body is served whole rather than cut. The notice
+#: that a body was truncated costs ~40 characters, so withholding fewer than a sentence's
+#: worth spends more of the budget than it saves -- and an advisory that fires when
+#: nothing meaningful was withheld is one a reader learns to skip, and then misses the one
+#: that matters (huggingface/ghlore#31).
+BODY_SLACK_CHARS = 80
 #: What an unfocused ``thread`` does with those ten slots, and the name it reports.
 #: Two at each end and the rest spread across the middle, because a *contested* thread
 #: resolves in the middle: on ``huggingface/transformers#39847`` the first five and last
@@ -241,6 +247,18 @@ class ThreadView:
     #: overstated the thread and made ``10 of 89 comments`` a count of two different
     #: things (huggingface/ghlore#18).
     total_documents: int = 0
+    #: Comments this thread has that the trust floor did not admit. Machine-authored
+    #: documents are excluded rather than down-weighted (section 6.2) -- correct, they are
+    #: not evidence -- but a thread whose only comment is one of them rendered as ``0 of
+    #: 0``, which is the sentence for a thread nobody has touched. Counted so the filter
+    #: can be announced instead of inferred (huggingface/ghlore#28).
+    machine_suppressed: int = 0
+    #: When this thread was last rebuilt from GitHub. Per response and per document, which
+    #: is exactly what ``status``'s per-source high-water rows are not: nobody can compose
+    #: ``[issue_comments]`` and ``[threads]`` into "are the comments on *this* thread
+    #: current?", and two field runs read that strip wrongly in opposite directions --
+    #: once discounting comments that were complete (huggingface/ghlore#32).
+    indexed_at: dt.datetime | None = None
     #: How the returned comments were chosen -- ``focus`` when a query ordered them,
     #: :data:`ENDS_AND_MIDDLE` otherwise. A positional sample and a ranked top-ten are
     #: indistinguishable on the page unless the page says which it is, and the first ten

@@ -101,7 +101,15 @@ def render_thread(
     """One thread, with the cap stated rather than implied.
 
     A caller that cannot tell truncation from a quiet thread will read ten comments as the
-    whole argument, so the count is on the page.
+    whole argument, so the count is on the page -- and so is every other reason a comment
+    is not on it. The tier filter used to be the silent one: a thread whose only comment
+    is machine-authored rendered as ``0 of 0``, which is the sentence for an untouched
+    thread (huggingface/ghlore#28).
+
+    The head line also carries when this thread was last rebuilt from GitHub
+    (huggingface/ghlore#32). ``status`` has that number per ingestion *source*, which no
+    reader can compose into an answer about one document -- and two runs have now drawn
+    opposite wrong conclusions trying to.
     """
     thread = payload.get("thread") or {}
     lines = [
@@ -133,26 +141,51 @@ def render_thread(
     lines.append("")
 
     comments = thread.get("comments") or []
-    returned, total = (
-        thread.get("comments_returned", len(comments)),
-        thread.get("comments_total", 0),
-    )
+    returned = thread.get("comments_returned", len(comments))
+    # `comments_total` is every comment on the thread. `visible` is how many of them this
+    # trust floor admits, and it -- never the total -- is what the cap and the sampling
+    # compose with: the machine tier is a separate question, not a page we ran out of room
+    # for (huggingface/ghlore#28).
+    total = thread.get("comments_total", 0)
+    suppressed = int(thread.get("comments_machine_suppressed") or 0)
+    visible = max(total - suppressed, returned)
     focus, matched = thread.get("focus") or "", thread.get("focus_matched")
-    head = f"-- {returned} of {total} comments"
+    clauses = []
+    if suppressed:
+        # Filtered is not empty. `0 of 0` on a thread we hold one bot comment for asserts
+        # the thread is untouched, which is the one thing it did not mean -- and it is the
+        # failure signature #11 was opened to eliminate (huggingface/ghlore#28).
+        clauses.append(
+            f"{suppressed} machine-tier suppressed"
+            + (
+                " (`ghlore search --trust machine` asks what the bots claimed)"
+                if presentation
+                else ""
+            )
+        )
     if focus:
-        head += f", best first for {focus!r}"
+        clause = f"best first for {focus!r}"
         if matched is not None:
-            head += f" ({matched} of {total} carry every term)"
-    elif thread.get("selection") == "ends+middle" and total > returned:
+            clause += f" ({matched} of {visible} carry every term)"
+        clauses.append(clause)
+    elif thread.get("selection") == "ends+middle" and visible > returned:
         # The selection, named. Ten comments under a bare count read as the ten best, and
         # an agent that believes it has read the best ten stops (huggingface/ghlore#16).
-        head += ", SAMPLED not ranked: the first and last few and a spread of the middle"
+        clauses.append("SAMPLED not ranked: the first and last few and a spread of the middle")
+    # Per-response freshness (huggingface/ghlore#32). `status` reports it per ingestion
+    # source, and two runs have now composed those rows into opposite wrong conclusions
+    # about one thread -- once too trusting, once not enough. The only question a reader
+    # asks before acting is whether *these* comments are current, so the answer travels
+    # with them instead of being assembled from a strip.
+    if thread.get("indexed_at"):
+        clauses.append(f"current to {thread['indexed_at']}")
+    head = ", ".join([f"-- {returned} of {total} comments", *clauses])
     lines.append(head + " --")
     for index, comment in enumerate(comments, start=1):
         lines += _hit_lines(index, comment, note=_passage_note(comment, comments))
-    if total > returned:
+    if visible > returned:
         lines.append(
-            f"({total - returned} not shown: a thread is never returnable in full."
+            f"({visible - returned} not shown: a thread is never returnable in full."
             + (
                 ' `--focus "<what you care about>"` ranks all of them.'
                 if presentation and not focus

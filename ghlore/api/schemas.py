@@ -208,6 +208,18 @@ def why_json(view: WhyView, *, blame: Any) -> dict[str, Any]:
     }
 
 
+def _stamp(moment: dt.datetime | None) -> str | None:
+    """A freshness mark a reader can compare with a GitHub timestamp, to the second.
+
+    ``Z`` rather than an offset, and no microseconds: this is read next to the ages on the
+    same page, and the six digits it would otherwise carry are noise in a line whose whole
+    job is to be glanced at.
+    """
+    if moment is None:
+        return None
+    return moment.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def thread_json(view: ThreadView, *, compact: bool = False) -> dict[str, Any]:
     return {
         "repo": view.repo,
@@ -254,8 +266,22 @@ def thread_json(view: ThreadView, *, compact: bool = False) -> dict[str, Any]:
         "comments": [hit_json(hit, compact=compact) for hit in view.comments],
         "comments_returned": len(view.comments),
         # Comments, not documents: a long comment is several documents and counting rows
-        # called one comment two (huggingface/ghlore#18).
-        "comments_total": view.total_documents,
+        # called one comment two (huggingface/ghlore#18). Every comment the thread has,
+        # including the ones the trust floor withheld -- `comments_total` minus
+        # `comments_machine_suppressed` is what the cap and the sampling compose with, and
+        # a total computed post-filter said `0 of 0` about a thread we hold a comment for
+        # (huggingface/ghlore#28).
+        "comments_total": view.total_documents + view.machine_suppressed,
+        # The gap, named rather than left to be inferred from a short list. Machine
+        # authors are excluded and not down-weighted (section 6.2), so this is a filter a
+        # reader has to know fired before concluding a thread is quiet.
+        "comments_machine_suppressed": view.machine_suppressed,
+        # When this response's thread was last rebuilt from GitHub. Per document, because
+        # `status`'s per-source high-water rows cannot be composed into an answer about
+        # one thread and two field runs composed them wrongly in opposite directions
+        # (huggingface/ghlore#32). A string, not a datetime: `render` takes plain JSON
+        # shapes and must read the same on both sides of the wire.
+        "indexed_at": _stamp(view.indexed_at),
         # HOW those comments were chosen. A positional sample and a ranked top ten look
         # identical on the page, and the first five and last five of a 97-comment thread
         # were read as its ten best (huggingface/ghlore#16).

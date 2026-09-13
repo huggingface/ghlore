@@ -215,6 +215,76 @@ def test_an_unfocused_thread_still_suggests_a_focus() -> None:
     assert "20 not shown" in render_thread(payload), "the cap is a fact; the flag is advice"
 
 
+# -- the tier filter, announced (huggingface/ghlore#28) -------------------
+
+
+def test_a_thread_whose_only_comment_is_a_bots_does_not_claim_to_be_empty() -> None:
+    """`0 of 0` is the sentence for a thread nobody has touched, and it was printed for a
+    thread the index holds one machine-tier comment for. An agent reading it cannot tell
+    whether CI has spoken or whether the thread is genuinely untouched -- which is the
+    failure signature #11 was opened to eliminate."""
+    payload = _thread(comments_returned=0, comments_total=1, comments_machine_suppressed=1)
+
+    piped = render_thread(payload)
+    assert "0 of 1 comments" in piped
+    assert "1 machine-tier suppressed" in piped, "the filter is a fact, so it is in both forms"
+    assert "--trust machine" not in piped, "how to see them is advice"
+
+    assert "--trust machine" in render_thread(payload, presentation=True)
+
+
+def test_a_suppressed_comment_is_not_counted_as_one_the_cap_dropped() -> None:
+    """`not shown` means the page ran out of room, which is a different fact and a
+    different next action from a tier this view never admits."""
+    out = render_thread(
+        _thread(comments_returned=0, comments_total=1, comments_machine_suppressed=1),
+        presentation=True,
+    )
+
+    assert "not shown" not in out
+    assert "--focus" not in out, "ranking cannot surface a comment the floor excluded"
+
+
+def test_both_axes_are_stated_when_both_apply() -> None:
+    payload = _thread(
+        selection="ends+middle",
+        comments_returned=10,
+        comments_total=90,
+        comments_machine_suppressed=1,
+    )
+
+    out = render_thread(payload)
+    assert "10 of 90 comments" in out
+    assert "1 machine-tier suppressed" in out
+    assert "SAMPLED not ranked" in out
+    assert "79 not shown" in out, "the cap dropped 79 of the 89 the floor admits, not 80"
+
+
+def test_a_thread_with_nothing_suppressed_says_nothing_about_tiers() -> None:
+    out = render_thread(_thread(comments_returned=2, comments_total=2))
+
+    assert "machine-tier" not in out
+
+
+# -- freshness travels with the answer (huggingface/ghlore#32) ------------
+
+
+def test_the_comment_page_says_what_it_is_current_to() -> None:
+    """`status` reports freshness per ingestion source, and no reader can compose those
+    rows into "are the comments on *this* thread current?". Two field runs tried and drew
+    opposite wrong conclusions -- one trusting stale comments, one discounting complete
+    ones. Per-response, the question has an answer."""
+    out = render_thread(
+        _thread(comments_returned=2, comments_total=2, indexed_at="2026-09-09T09:02:49Z")
+    )
+
+    assert "-- 2 of 2 comments, current to 2026-09-09T09:02:49Z --" in out
+
+
+def test_an_index_with_no_stamp_says_nothing_rather_than_none() -> None:
+    assert "current to" not in render_thread(_thread(indexed_at=None))
+
+
 # -- what the ten comments actually are (huggingface/ghlore#16, #18) -------
 
 

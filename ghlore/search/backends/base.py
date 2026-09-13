@@ -41,8 +41,10 @@ from sqlalchemy import (
 
 from ghlore.ingest.extract import CHANGED, FROM_COMMENT, MENTIONED
 from ghlore.search.queries import (
+    BODY_SLACK_CHARS,
     ENDS_AND_MIDDLE,
     HUMAN_TRUST,
+    MACHINE_TRUST,
     MAX_BODY_CHARS,
     MAX_CLAIMS,
     MAX_HITS_PER_THREAD,
@@ -462,8 +464,8 @@ class SearchBackend(ABC):
             # Indexed, not `row.metadata`: `Row` shadows it.
             meta = row._mapping["metadata"] or {}
             changed = meta.get("changed_files")
-            body, body_chars = self._body(conn, row.id, full=full)
-            comments, total, matched, selection = self._comments(conn, row, focus)
+            body, body_chars, body_truncated = self._body(conn, row.id, full=full)
+            comments, total, matched, selection, suppressed = self._comments(conn, row, focus)
 
         return ThreadView(
             repo=row.repo,
@@ -477,7 +479,7 @@ class SearchBackend(ABC):
             labels=labels,
             body=body,
             body_chars=body_chars,
-            body_truncated=len(body) < body_chars,
+            body_truncated=body_truncated,
             comments=comments,
             files_changed=paths[CHANGED],
             files_anchored=paths[FROM_COMMENT],
@@ -492,6 +494,8 @@ class SearchBackend(ABC):
             review_decision_by=tuple(meta.get("review_decision_by") or ()),
             requested_reviewers=tuple(meta.get("requested_reviewers") or ()),
             total_documents=total,
+            machine_suppressed=suppressed,
+            indexed_at=row.indexed_at,
             selection=selection,
             focus=focus,
             focus_matched=matched,
@@ -619,8 +623,8 @@ class SearchBackend(ABC):
             repo=repo, number=number, claims=claims, total=len(rows), links_indexed=indexed
         )
 
-    def _body(self, conn: Any, thread_id: int, *, full: bool) -> tuple[str, int]:
-        """The opening post, and how long it really is.
+    def _body(self, conn: Any, thread_id: int, *, full: bool) -> tuple[str, int, bool]:
+        """The opening post, how long it really is, and whether any of it was withheld.
 
         The cap is a token budget, not the "never returnable in full" contract: that one
         is about the *comments*, which are unbounded -- a 200-comment argument is the case
@@ -631,6 +635,15 @@ class SearchBackend(ABC):
         ``### Reproduction`` -- the part an agent came for -- started at almost exactly the
         800th. So ``full`` serves all of it on request, and the truncated form now says
         how much it is holding back.
+
+        **Truncation is reported, not inferred** (huggingface/ghlore#31). The caller used
+        to compare the served length against ``len(whole)``, and :func:`snippet` collapses
+        whitespace before it cuts anything -- so a 244-character body with blank lines in
+        it came back as 242 and announced, in 40 characters, that it was withholding two
+        that had never been withheld. Only this function knows the difference, so it says.
+
+        The same number is why :data:`BODY_SLACK_CHARS` exists: a remainder shorter than
+        the sentence announcing it is worth serving rather than announcing.
         """
         chunks = (
             conn.execute(
@@ -649,32 +662,46 @@ class SearchBackend(ABC):
         # never wrote. The join is the boundary it split on.
         whole = "\n\n".join(text for text in chunks if text)
         if full:
-            return whole, len(whole)
-        return snippet(whole, limit=MAX_BODY_CHARS), len(whole)
+            return whole, len(whole), False
+        # `snippet` normalizes whitespace whether or not it cuts, so the comparison that
+        # decides "was anything withheld?" has to be against the normalized form -- and a
+        # body only a sentence over the cap is served whole instead.
+        flat = " ".join(whole.split())
+        if len(flat) <= MAX_BODY_CHARS + BODY_SLACK_CHARS:
+            return flat, len(whole), False
+        return snippet(whole, limit=MAX_BODY_CHARS), len(whole), True
 
     def _comments(
         self, conn: Any, thread: Any, focus: str
-    ) -> tuple[tuple[Hit, ...], int, int | None, str]:
-        base = select(
-            s.documents.c.id,
-            s.documents.c.source_type,
-            s.documents.c.source_id,
-            s.documents.c.chunk_index,
-            s.documents.c.url,
-            s.documents.c.author,
-            s.documents.c.trust,
-            s.documents.c.body_text,
-            s.documents.c.github_created_at,
-        ).where(
-            s.documents.c.thread_id == thread.id,
-            s.documents.c.source_type.notin_(("title", "body")),
-            s.documents.c.trust.in_(admissible_trust(None)),
-        )
+    ) -> tuple[tuple[Hit, ...], int, int | None, str, int]:
+        def documents(tiers: tuple[str, ...]) -> Select:
+            return select(
+                s.documents.c.id,
+                s.documents.c.source_type,
+                s.documents.c.source_id,
+                s.documents.c.chunk_index,
+                s.documents.c.url,
+                s.documents.c.author,
+                s.documents.c.trust,
+                s.documents.c.body_text,
+                s.documents.c.github_created_at,
+            ).where(
+                s.documents.c.thread_id == thread.id,
+                s.documents.c.source_type.notin_(("title", "body")),
+                s.documents.c.trust.in_(tiers),
+            )
+
+        base = documents(admissible_trust(None))
         # Comments, not rows: a 9,827-character comment is several documents and counting
         # them called one comment two (huggingface/ghlore#18). `passages` is the same
         # aggregate read the other way, and it is what lets a hit say it is a piece.
         passages = _passage_counts(conn, base)
         total = len(passages)
+        # What the floor above took out. The exclusion is right -- our own bot's output is
+        # not evidence (section 6.2) -- but unannounced it turns into `0 of 0 comments` on
+        # a thread we hold one for, which is the sentence for a thread nobody has touched
+        # (huggingface/ghlore#28). Counted here because only this query knows.
+        suppressed = len(_passage_counts(conn, documents((MACHINE_TRUST,))))
 
         matched: int | None = None
         if focus.strip():
@@ -709,7 +736,7 @@ class SearchBackend(ABC):
             )
             for row in rows
         )
-        return hits, total, matched, selection
+        return hits, total, matched, selection, suppressed
 
     def _focused(self, conn: Any, base: Select, focus: str) -> list[Any]:
         """Order a thread's comments by a focus query. **Never filter on it.**

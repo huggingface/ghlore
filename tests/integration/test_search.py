@@ -18,6 +18,8 @@ from ghlore.ingest.backfill import backfill
 from ghlore.ingest.index_thread import index_thread
 from ghlore.search import SearchQuery, open_backend
 from ghlore.search.queries import (
+    BODY_SLACK_CHARS,
+    MAX_BODY_CHARS,
     MAX_HITS,
     MAX_HITS_PER_THREAD,
     MAX_SNIPPET_CHARS,
@@ -453,6 +455,102 @@ def test_a_long_body_is_truncated_with_its_own_length_and_served_whole_on_reques
     assert "rotary_pct" not in capped.body  # the part that mattered, cut
     assert "rotary_pct" in whole.body
     assert whole.body_truncated is False
+
+
+def test_normalizing_whitespace_is_not_truncation(engine: Engine, fake: FakeGitHub) -> None:
+    """`snippet` collapses newlines before it cuts anything, so a body well under the cap
+    came back two characters shorter than it was stored and the caller -- comparing the
+    two lengths -- announced, in 40 characters, that it was withholding two
+    (huggingface/ghlore#31)."""
+    fake.add_issue(1, body="### System Info\n\nlinux\n\n### Reproduction\n\nrun it")
+    _index(engine, fake, 1)
+
+    view = open_backend(engine).thread(REPO, 1)
+
+    assert view is not None
+    assert view.body_truncated is False
+    assert "Reproduction" in view.body
+
+
+def test_a_body_a_sentence_over_the_cap_is_served_rather_than_announced(
+    engine: Engine, fake: FakeGitHub
+) -> None:
+    """An advisory costs more than the tail it withholds below a sentence's worth -- and
+    one that fires when nothing meaningful was withheld is one a reader learns to skip,
+    and then misses the one that matters (huggingface/ghlore#31)."""
+    body = "x" * (MAX_BODY_CHARS + BODY_SLACK_CHARS - 1)
+    fake.add_issue(1, body=body)
+    _index(engine, fake, 1)
+
+    view = open_backend(engine).thread(REPO, 1)
+
+    assert view is not None
+    assert view.body_truncated is False
+    assert view.body == body, "the remainder is served, not announced"
+
+
+def test_a_body_past_the_slack_is_still_cut_and_still_says_so(
+    engine: Engine, fake: FakeGitHub
+) -> None:
+    fake.add_issue(1, body="y" * (MAX_BODY_CHARS + BODY_SLACK_CHARS + 200))
+    _index(engine, fake, 1)
+
+    view = open_backend(engine).thread(REPO, 1)
+
+    assert view is not None
+    assert view.body_truncated is True
+    assert view.body_chars == MAX_BODY_CHARS + BODY_SLACK_CHARS + 200
+
+
+# -- what the trust floor took out (huggingface/ghlore#28) -----------------
+
+
+def test_a_thread_counts_the_machine_comments_it_will_not_show(
+    engine: Engine, fake: FakeGitHub
+) -> None:
+    """Excluding them is right -- our own bot's output is not evidence (section 6.2) --
+    but a thread whose only comment is one of them reported `0 of 0`, which is the
+    sentence for a thread nobody has touched."""
+    issue = fake.add_issue(1, body="the report")
+    fake.add_comment(
+        issue, 10, "Suggested jobs to run: run-slow gpt_neox", author="github-actions", bot=True
+    )
+    _index(engine, fake, 1)
+
+    view = open_backend(engine).thread(REPO, 1)
+
+    assert view is not None
+    assert view.comments == ()
+    assert view.total_documents == 0, "the floor's denominator is what the cap composes with"
+    assert view.machine_suppressed == 1
+
+
+def test_a_thread_with_no_bots_suppresses_nothing(engine: Engine, fake: FakeGitHub) -> None:
+    issue = fake.add_issue(1, body="the report")
+    fake.add_comment(issue, 10, "I see it too")
+    _index(engine, fake, 1)
+
+    view = open_backend(engine).thread(REPO, 1)
+
+    assert view is not None
+    assert view.machine_suppressed == 0
+
+
+# -- freshness, per document (huggingface/ghlore#32) -----------------------
+
+
+def test_a_thread_carries_when_it_was_last_rebuilt(engine: Engine, fake: FakeGitHub) -> None:
+    """`status`'s per-source high-water rows cannot be composed into an answer about one
+    thread, and two field runs composed them wrongly in opposite directions."""
+    before = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=5)
+    fake.add_issue(1, body="the report")
+    _index(engine, fake, 1)
+
+    view = open_backend(engine).thread(REPO, 1)
+
+    assert view is not None
+    assert view.indexed_at is not None
+    assert view.indexed_at >= before
 
 
 def test_a_truncated_changed_file_list_carries_its_denominator(

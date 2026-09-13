@@ -166,6 +166,33 @@ the ten *best*, so the agent concluded the thread held nothing further — while
 that answered its question sat at position 51 of 97. **If you have a question, pass
 `--focus`;** the sample is for orientation, not for deciding.
 
+**A filtered thread is not a quiet one.** Machine-authored comments are excluded from the
+default view — correct, they are not evidence — and that exclusion is now announced rather
+than left to be inferred from a short list. `-- 0 of 0 comments --` on a thread the index
+holds a bot comment for asserted the thread was untouched, which is the one thing it did
+not mean:
+
+```
+-- 0 of 1 comments, 1 machine-tier suppressed (`ghlore search --trust machine` asks what the bots claimed) --
+```
+
+`comments_total` counts every comment the thread has; `comments_machine_suppressed` is how
+many of them this view withheld. The difference is what the cap and the sampling compose
+with, so a suppressed comment never shows up as one the page ran out of room for.
+
+**Each page says what it is current to.** `status` reports freshness per ingestion source,
+and nobody can compose `[issue_comments]` and `[threads]` into an answer about one thread —
+two field runs tried and got it wrong in opposite directions, once trusting comments that
+were stale and once discounting comments that were complete. So the answer travels with the
+response, as `indexed_at` in `--json`:
+
+```
+-- 2 of 2 comments, current to 2026-09-09T09:02:49Z --
+```
+
+It is when this thread was last rebuilt from GitHub. Keep the `status` rows for what they
+are good at, which is the operator's view of ingestion.
+
 **A long comment comes back as one hit, marked.** GitHub comments are chunked into several
 indexed documents, and two chunks of one comment used to arrive as two hits with the same
 URL, author and tier — which reads as two people agreeing. Now they collapse into one slot,
@@ -452,7 +479,8 @@ and shared with the web UI for the same reason.
 
 **Prefer `--json`.** It carries everything the text does and nothing a caller has to
 un-format: the comments array, `body_chars`/`body_truncated`, the three file lists,
-`files_total`/`files_collected`, `comments_total`, `selection`, per-hit `score` with its
+`files_total`/`files_collected`, `comments_total` with `comments_machine_suppressed`,
+`indexed_at`, `selection`, per-hit `score` with its
 `breakdown`, and each hit's `document_id`, `source_id`, `chunk_index` and `passages`.
 `--json` and `--compact` are accepted on either side of the verb.
 
@@ -474,5 +502,12 @@ call, so "within a version" is something you can rely on rather than hope for:
   @login` in an `inflight` row's state column. The review line is printed even when the
   thread has no comments, which is the only thing that tells `-- 0 of 0 comments --` apart
   from *approved without typing*;
+- the comment head line names every reason a comment is not on the page — the cap, the
+  sampling, the focus, and the trust tier — and ends with what the thread is current to. A
+  count printed after a filter, with the filter unmentioned, is the failure this whole
+  section exists to prevent;
+- `(body truncated: …)` fires only when something worth reading was withheld. Normalizing
+  whitespace is not truncation, and a remainder shorter than the sentence announcing it is
+  served instead of announced;
 - fields are never reordered within a minor version, and the version is enforced on every
   call, so a parser pinned to one version cannot be surprised by a cosmetic change.
