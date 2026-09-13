@@ -363,11 +363,20 @@ message says. If it instead says the daemon is **behind**, the client is fine an
 ## Parsing the output
 
 With no MCP server, stdout is the API, so what it prints is a contract rather than a
-rendering — and the contract is the same whether a person or a pipe is reading. **There is
-no TTY branch and there will not be one:** the text an agent reads and the text a person
-inspects have to be the same string, which is the same reason the renderer is server-side
-and shared with the web UI. A quiet mode for pipes would make the version nobody looks at
-the version everybody consumes.
+rendering.
+
+**There is one TTY branch, and it may only add advice** (#13). On a terminal the page also
+carries the backend tag and the flags worth trying next — `--full`, `--focus`, `ghlored
+derive`. Through a pipe, none of that is printed; `--plain` forces the piped form on a
+terminal.
+
+**Every fact is in both forms.** Counts, caps, truncation warnings, the sample-versus-ranked
+line, the trust tiers, the envelope and the `> ` marking are not presentation and do not
+move. This section used to say no branch could ever exist, because a quiet mode for pipes
+makes the version nobody looks at the version everybody consumes — and that reason is
+exactly why the split is advice-only: what a person sees is what a pipe sees plus
+suggestions, so the two cannot disagree about what is true. The renderer stays server-side
+and shared with the web UI for the same reason.
 
 **Prefer `--json`.** It carries everything the text does and nothing a caller has to
 un-format: the comments array, `body_chars`/`body_truncated`, the three file lists,
@@ -386,4 +395,12 @@ call, so "within a version" is something you can rely on rather than hope for:
 - counts and caveats are prose on their own line (`-- 10 of 89 comments … --`,
   `changed files: …`, `(body truncated: …)`), and a caveat is never dropped for brevity;
 - no score is printed. The order is the ranking, and the number's scale is a property of
-  the backend — it is in `--json` for whoever is tuning weights.
+  the backend — it is in `--json` for whoever is tuning weights;
+- `state_reason`, `closed_by`, `merged`, `review_decision` and `requested_reviewers` (#22)
+  render as their own lines under the header — `closed as duplicate by @login`, `closed by
+  its author`, `merged`, `review: approved by @login` — and as `closed (duplicate) by
+  @login` in an `inflight` row's state column. The review line is printed even when the
+  thread has no comments, which is the only thing that tells `-- 0 of 0 comments --` apart
+  from *approved without typing*;
+- fields are never reordered within a minor version, and the version is enforced on every
+  call, so a parser pinned to one version cannot be surprised by a cosmetic change.

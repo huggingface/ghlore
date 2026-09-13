@@ -221,7 +221,11 @@ def build_app(
         }
         return _json(
             payload,
-            render=(lambda scrubbed: render_search(scrubbed, compact=body.compact))
+            render=(
+                lambda scrubbed: render_search(
+                    scrubbed, compact=body.compact, presentation=body.presentation
+                )
+            )
             if body.render
             else None,
         )
@@ -254,6 +258,7 @@ def build_app(
         focus: str = "",
         compact: bool = False,
         render: bool = False,
+        presentation: bool = False,
         full: bool = False,
     ) -> Response:
         """One thread, capped (section 6). See :func:`_one_repo` for ``repo``."""
@@ -264,7 +269,11 @@ def build_app(
         payload = {"notice": NOTICE, "thread": thread_json(view, compact=compact)}
         return _json(
             payload,
-            render=(lambda scrubbed: render_thread(scrubbed, compact=compact)) if render else None,
+            render=(
+                lambda scrubbed: render_thread(scrubbed, compact=compact, presentation=presentation)
+            )
+            if render
+            else None,
         )
 
     @app.get("/api/v1/inflight/{number}")
@@ -273,6 +282,7 @@ def build_app(
         token: Caller,
         repo: str | None = None,
         render: bool = False,
+        presentation: bool = False,
     ) -> Response:
         """What already claims to close this thread (section 13.3).
 
@@ -283,7 +293,12 @@ def build_app(
         repo = _one_repo(token, repo)
         view = deps.backend.inflight(repo, number)
         payload = {"notice": NOTICE, **inflight_json(view)}
-        return _json(payload, render=render_inflight if render else None)
+        return _json(
+            payload,
+            render=(lambda scrubbed: render_inflight(scrubbed, presentation=presentation))
+            if render
+            else None,
+        )
 
     @app.post("/api/v1/precedent")
     def precedent(token: Caller) -> Response:

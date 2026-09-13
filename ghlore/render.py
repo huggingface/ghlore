@@ -5,6 +5,13 @@ including the untrusted envelope and its delimiter scrubbing -- so that a format
 injection bug is caught by a person reading it rather than by an agent meeting it mid-task.
 Two renderers would drift, and the one that drifted would be the one nobody was looking at.
 
+**With no MCP server, stdout is an API** (#13), so the piped form is a contract:
+``presentation=False`` -- what a caller gets when stdout is not a TTY -- prints facts only,
+in a documented line grammar (``docs/cli.md``). ``presentation=True`` adds advice and
+diagnostics for the person at the terminal: the backend tag, `--full`, `--focus`,
+`ghlored derive`. **Facts are never presentation**, so every count, cap and caveat is in
+both forms; only the suggestions move.
+
 **Everything here takes plain dictionaries -- the JSON shapes of section 7 -- and imports
 nothing but the standard library.** That is what lets it live on both sides of the
 boundary: :mod:`ghlore.cli` may not reach a database driver or a web server (AGENTS.md
@@ -27,7 +34,9 @@ TRUST_LABEL = {
 }
 
 
-def render_search(payload: dict[str, Any], *, compact: bool = False) -> str:
+def render_search(
+    payload: dict[str, Any], *, compact: bool = False, presentation: bool = False
+) -> str:
     """The result page, wrapped in the envelope.
 
     Empty is not an error: no hits renders as a sentence saying so, still enveloped, still
@@ -39,7 +48,7 @@ def render_search(payload: dict[str, Any], *, compact: bool = False) -> str:
     header = [
         f"{len(hits)} hit{'' if len(hits) == 1 else 's'}"
         + (f" for {query.get('text')!r}" if query.get("text") else "")
-        + f"   [{backend.get('name', '?')}/{backend.get('ranking', '?')}]"
+        + (f"   [{backend.get('name', '?')}/{backend.get('ranking', '?')}]" if presentation else "")
     ]
     floor = query.get("trust_floor") or []
     if floor and floor != ["reported", "authoritative"]:
@@ -86,7 +95,9 @@ def _hit_lines(index: int, hit: dict[str, Any], note: str = "") -> list[str]:
     return lines
 
 
-def render_thread(payload: dict[str, Any], *, compact: bool = False) -> str:
+def render_thread(
+    payload: dict[str, Any], *, compact: bool = False, presentation: bool = False
+) -> str:
     """One thread, with the cap stated rather than implied.
 
     A caller that cannot tell truncation from a quiet thread will read ten comments as the
@@ -110,8 +121,14 @@ def render_thread(payload: dict[str, Any], *, compact: bool = False) -> str:
     if thread.get("body_truncated"):
         lines.append(
             f"(body truncated: {len(thread.get('body') or '')} of "
-            f"{thread.get('body_chars')} characters. `--full` serves the rest, which on an "
-            "issue template is where the reproduction starts.)"
+            f"{thread.get('body_chars')} characters."
+            + (
+                " `--full` serves the rest, which on an issue template is where the "
+                "reproduction starts."
+                if presentation
+                else ""
+            )
+            + ")"
         )
     lines.append("")
 
@@ -136,7 +153,11 @@ def render_thread(payload: dict[str, Any], *, compact: bool = False) -> str:
     if total > returned:
         lines.append(
             f"({total - returned} not shown: a thread is never returnable in full."
-            + ("" if focus else ' `--focus "<what you care about>"` ranks all of them.')
+            + (
+                ' `--focus "<what you care about>"` ranks all of them.'
+                if presentation and not focus
+                else ""
+            )
             + ")"
         )
     return envelope("\n".join(lines).rstrip(), source=thread.get("url"))
@@ -295,7 +316,7 @@ def _file_lines(thread: dict[str, Any]) -> list[str]:
     return lines
 
 
-def render_inflight(payload: dict[str, Any]) -> str:
+def render_inflight(payload: dict[str, Any], *, presentation: bool = False) -> str:
     """What already claims to close a thread.
 
     Empty is the answer this verb exists to give, so it has to be a sentence rather than a
@@ -311,7 +332,9 @@ def render_inflight(payload: dict[str, Any]) -> str:
         if not payload.get("links_indexed"):
             lines.append(
                 "(and this repository has no relationship rows at all, so that is not an "
-                "answer yet: re-derive it with `ghlored derive` to fill them.)"
+                "answer yet"
+                + (": re-derive it with `ghlored derive` to fill them" if presentation else "")
+                + ".)"
             )
         return envelope("\n".join(lines))
 

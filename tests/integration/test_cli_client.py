@@ -228,7 +228,9 @@ def test_thread_full_serves_the_body_the_cap_was_hiding(wired, engine, fake, cap
     whole = _run(capsys, "thread", "1", "--full")
 
     assert "rotary_pct" not in capped
-    assert "body truncated" in capped and "--full" in capped
+    # Captured output is not a TTY, so this is the piped form: the cap is a fact and stays,
+    # the flag that lifts it is advice and moves to the terminal form (#13).
+    assert "body truncated" in capped and "--full" not in capped
     assert "rotary_pct" in whole
 
 

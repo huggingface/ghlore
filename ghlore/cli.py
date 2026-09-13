@@ -83,6 +83,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--compact", action="store_true", help="trim snippets for a tight context budget"
     )
     p.add_argument(
+        "--plain",
+        action="store_true",
+        help="the piped form even on a terminal: facts only, no suggestions (#13)",
+    )
+    p.add_argument(
         "--api",
         default=None,
         help=f"the ghlored base URL (default: {API_ENV}, else {DEFAULT_API})",
@@ -255,12 +260,16 @@ def _search(args: argparse.Namespace) -> int:
             # The server renders it, so the envelope a person inspects in the web UI and
             # the one an agent reads here are the same string from the same code.
             "render": not args.json,
+            "presentation": _presentation(args),
         },
     )
     return _emit(
         args,
         payload,
-        lambda: payload.get("rendered") or render_search(payload, compact=args.compact),
+        lambda: (
+            payload.get("rendered")
+            or render_search(payload, compact=args.compact, presentation=_presentation(args))
+        ),
     )
 
 
@@ -269,6 +278,7 @@ def _thread(args: argparse.Namespace) -> int:
         "focus": args.focus,
         "compact": str(args.compact).lower(),
         "render": str(not args.json).lower(),
+        "presentation": str(_presentation(args)).lower(),
         "full": str(args.full).lower(),
     }
     if args.repo:
@@ -277,7 +287,10 @@ def _thread(args: argparse.Namespace) -> int:
     return _emit(
         args,
         payload,
-        lambda: payload.get("rendered") or render_thread(payload, compact=args.compact),
+        lambda: (
+            payload.get("rendered")
+            or render_thread(payload, compact=args.compact, presentation=_presentation(args))
+        ),
     )
 
 
@@ -287,16 +300,35 @@ def _inflight(args: argparse.Namespace) -> int:
     Cheap, one hop, and it prevents the most expensive mistake an agent makes -- see
     :mod:`ghlore.ingest.relationships`.
     """
-    query = {"render": str(not args.json).lower()}
+    query = {
+        "render": str(not args.json).lower(),
+        "presentation": str(_presentation(args)).lower(),
+    }
     if args.repo:
         query["repo"] = args.repo
     payload = _call(args, "GET", f"/api/v1/inflight/{args.number}", params=query)
-    return _emit(args, payload, lambda: payload.get("rendered") or render_inflight(payload))
+    return _emit(
+        args,
+        payload,
+        lambda: (
+            payload.get("rendered") or render_inflight(payload, presentation=_presentation(args))
+        ),
+    )
 
 
 def _status(args: argparse.Namespace) -> int:
     payload = _call(args, "GET", "/api/v1/status")
     return _emit(args, payload, lambda: render_status(payload))
+
+
+def _presentation(args: argparse.Namespace) -> bool:
+    """Whether a person is reading this (#13).
+
+    The `git`/`gh` convention: a terminal gets the flags worth trying next, a pipe gets the
+    documented grammar and nothing else. `--plain` forces the pipe form for a script that
+    happens to own a TTY.
+    """
+    return sys.stdout.isatty() and not getattr(args, "plain", False)
 
 
 def _emit(args: argparse.Namespace, payload: dict[str, Any], text) -> int:

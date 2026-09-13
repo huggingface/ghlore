@@ -77,6 +77,13 @@ class SearchRequest(BaseModel):
             "agent reading the JSON would be paying for the same content twice"
         ),
     )
+    presentation: bool = Field(
+        default=False,
+        description=(
+            "render for a person at a TTY: the same facts plus the backend tag and the "
+            "flags worth trying next. The CLI sends it when stdout is a terminal (#13)"
+        ),
+    )
     expand: bool = Field(
         default=True,
         description=(
