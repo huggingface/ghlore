@@ -87,6 +87,17 @@ def test_copies_groups_the_definitions_so_the_outlier_is_the_answer(client) -> N
     assert payload["head"]
 
 
+def test_copies_can_be_asked_for_the_exact_text_instead(client) -> None:
+    """Grouping by what the body does is the default (issue #35); grouping by its text is
+    still a real question, so it is a flag rather than something you cannot ask for."""
+    params = {"symbol": "compute_default_rope_parameters", "exact": "true"}
+    payload = client.get("/api/v1/code/copies", params=params).json()
+
+    assert payload["exact"] is True
+    assert all(group["bodies"] == 1 for group in payload["groups"])
+    assert all(copy["shape_hash"] == copy["body_hash"] for copy in payload["groups"][0]["copies"])
+
+
 def test_grep_answers_the_pattern_question(client) -> None:
     response = client.get(
         "/api/v1/code/grep",
@@ -95,6 +106,9 @@ def test_grep_answers_the_pattern_question(client) -> None:
 
     payload = response.json()
     assert [hit["path"] for hit in payload["hits"]] == ["src/modeling_llama.py"]
+    # Both denominators, as separate fields (issue #37): one file matched, two were read,
+    # and a caller given only the second reads it as the first.
+    assert payload["files_with_hits"] == 1
     assert payload["files_searched"] == 2
 
 

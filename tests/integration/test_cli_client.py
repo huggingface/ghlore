@@ -51,7 +51,11 @@ def wired(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     monkeypatch.setattr(httpx, "request", request)
     monkeypatch.setenv("GHLORE_API", "http://testserver")
-    for env in cli.TOKEN_ENVS:
+    # `GHLORE_REPO` is cleared for the same reason as the tokens: it is a real variable a
+    # developer running this suite has exported, and it changes what every call below
+    # sends. A test that passes only on a machine with an unset environment is worse than
+    # one that fails.
+    for env in (*cli.TOKEN_ENVS, cli.REPO_ENV):
         monkeypatch.delenv(env, raising=False)
     return server
 
@@ -375,3 +379,42 @@ def test_a_daemon_behind_the_client_names_the_deployment_as_the_thing_to_move(
         cli.main(["search", "anything"])
 
     assert "behind" in str(exc.value)
+
+
+# -- GHLORE_REPO, end to end (issue #36) -----------------------------------
+
+
+def test_a_bare_number_on_a_multi_repo_daemon_is_refused_and_names_the_way_out(
+    wired, engine, capsys
+) -> None:
+    """The refusal itself is right and stays -- guessing between repositories on a bare
+    number would be silently wrong. What was missing is the second half of the sentence:
+    recovering once is cheap, and the field cost was paying `--repo` on every call after."""
+    for name in (REPO, "owner/other"):
+        repo = FakeGitHub(name)
+        repo.add_pr(1, title=f"the thread in {name}")
+        with repo.client() as client:
+            index_thread(engine, client, name, 1)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["thread", "1"])
+
+    assert "more than one repository is in scope" in str(exc.value)
+    assert "GHLORE_REPO" in str(exc.value)
+
+
+def test_the_environment_answers_it_without_the_flag(
+    wired, engine, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """The same call, with the variable set: no flag, and the right repository."""
+    for name in (REPO, "owner/other"):
+        repo = FakeGitHub(name)
+        repo.add_pr(1, title=f"the thread in {name}")
+        with repo.client() as client:
+            index_thread(engine, client, name, 1)
+    monkeypatch.setenv(cli.REPO_ENV, REPO)
+
+    out = _run(capsys, "thread", "1")
+
+    assert f"the thread in {REPO}" in out
+    assert "the thread in owner/other" not in out

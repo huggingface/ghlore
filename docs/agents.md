@@ -1,9 +1,28 @@
 # Using it from an agent
 
+*(This page is harness wiring. The root `AGENTS.md` is a different document — the operating
+contract for contributing to `ghlore` itself.)*
+
+**`ghlore --help` is the surface to point an agent at first.** It names every verb, the
+order to reach for them in, the environment, and runnable examples — and unlike this page
+it arrives byte-exact, needs no network and is already installed. A page is rendered,
+summarized, truncated and cached by whatever sits between it and the reader; one field run
+read our landing page through a summarizing fetch that dropped `--repo` off every example,
+and its first two calls failed on exactly that.
+
 `skills/search-project-history/SKILL.md` ships a ready-made skill for agents that read one
-(Claude Code and similar): when to reach for the index rather than `grep`, how to phrase a
-query, what the trust tiers mean, and how to triage an empty result. Point your harness at
-it, or lift the prose.
+(Claude Code and similar): when to reach for the index, when to reach for the code lens,
+how to phrase a query, what the trust tiers mean, and how to triage an empty result. Point
+your harness at it, or lift the prose.
+
+## Set `GHLORE_REPO`
+
+A daemon serving more than one repository refuses a bare number rather than guess which
+project it belongs to, so `--repo` is required on `thread`, `inflight`, `why`, `symbol`,
+`grep` and `copies`. `GHLORE_REPO` is the session default for it, alongside `GHLORE_API`
+and `GHLORE_TOKEN`. Without it a single-repository session pays that flag on every call — a
+cost that grows as the index grows by repository, and one that does not depend on the agent
+having read any of this.
 
 Any agent with a shell can use `ghlore` with no integration work. There is no MCP server on
 purpose: any agent with a shell can already call an HTTP API. If your framework reads a
@@ -33,10 +52,18 @@ repo-declared tool manifest, declaring it is a few lines:
 
 ## Ask before starting work
 
-`ghlore inflight <number>` answers *is somebody already fixing this?* — the threads that
-claim to close a given issue, open ones first, each with `state`, `draft` and `merged`. An
-agent's most expensive failure mode is duplicating work that is already in review, and this
-is the query that prevents it.
+`ghlore inflight <number> --repo owner/name` answers *is somebody already fixing this?* —
+the threads that claim to close a given issue, open ones first, each with `state`, `draft`
+and `merged`. An agent's most expensive failure mode is duplicating work that is already in
+review, and this is the query that prevents it.
+
+## Check the claims against the code
+
+`ghlore grep`, `ghlore symbol` and `ghlore copies` run against the daemon's working clone
+at HEAD, with `--repo`. They are what turns a thread's claim into a verified one, and they
+need no checkout — which is what they exist for. `ghlore why <path>:<line> --repo
+owner/name` is the join: the pull request that last changed a line, and the review left on
+it.
 
 ## Query shape
 

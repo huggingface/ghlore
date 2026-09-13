@@ -12,6 +12,10 @@ Two verb families, deliberately in one binary:
   to ask the daemon's working clone instead, and ``symbol``, ``grep`` and ``copies``
   exist only there (issue #7).
 
+``GHLORE_REPO`` is the default for ``--repo`` on every verb that takes one except those
+last two -- for them the flag chooses a *tree*, and an environment variable must not make
+that choice (issue #36).
+
 This module must not import :mod:`ghlore.store`, :mod:`ghlore.github` or
 :mod:`ghlore.api`. That is asserted by ``tests/unit/test_module_boundary.py`` and it is
 what makes "an agent cannot write to the index" a property of the build. See AGENTS.md.
@@ -33,7 +37,7 @@ import sys
 from typing import Any
 from urllib.parse import urlsplit
 
-from ghlore import __version__
+from ghlore import __version__, guidance
 from ghlore.code.api import MissingParser
 from ghlore.render import (
     render_inflight,
@@ -46,6 +50,19 @@ from ghlore.wire import CLIENT_HEADER, SERVER_HEADER, UPGRADE_REQUIRED, explain
 
 API_ENV = "GHLORE_API"
 TOKEN_ENVS = ("GHLORE_TOKEN", "GHLORE_API_TOKEN")
+# The default for `--repo` (issue #36). A daemon serving more than one repository makes
+# `--repo` mandatory on every bare number, and a single-repo session then pays that on
+# every call for its whole length -- a field run passed it on ~20 consecutive calls. The
+# mechanism and the precedent already existed one line above: `GHLORE_API` and
+# `GHLORE_TOKEN` are read from the environment, and this is the third thing that is
+# constant for a session.
+#
+# It matters most for the reader who never sees the rule. The precondition is documented
+# and the error message states it, and the way that run still met it was a summarizing
+# fetch of the landing page that dropped the flag off every example -- content present,
+# lost in the reader's transform. An environment default is the only fix that survives
+# that, because it does not depend on having read anything.
+REPO_ENV = "GHLORE_REPO"
 # The deployment. This was `http://localhost:8080` for a day and the reason is worth
 # keeping, because it is the condition this default is really coupled to: the name existed
 # and did not *resolve* -- no certificate, so the ALB controller built no load balancer, so
@@ -83,8 +100,23 @@ def _also_after_the_verb(parser: argparse.ArgumentParser, *flags: str) -> None:
         )
 
 
+#: What ``--repo`` says on the six verbs that refuse a bare argument without it. ``defs``
+#: and ``refs`` spell their own, because for them the flag means something else.
+_REPO_HELP = f"OWNER/NAME; needed when the daemon serves several (default: ${REPO_ENV})"
+
+
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="ghlore", description=__doc__.splitlines()[0])
+    # `--help` is the only surface that arrives byte-exact, needs no network and is
+    # already installed, so issue #38 asks it to be sufficient on its own: the epilog is
+    # where the *order* to reach for the verbs in lives. It comes from
+    # :mod:`ghlore.guidance` rather than being written here, because the landing page and
+    # the docs render the same text and the four surfaces drifted once already (#40).
+    p = argparse.ArgumentParser(
+        prog="ghlore",
+        description=__doc__.splitlines()[0],
+        epilog=guidance.epilog(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p.add_argument("--version", action="version", version=f"ghlore {__version__}")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument(
@@ -127,7 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         dest="repos",
-        help="OWNER/NAME; narrow to this repository (repeatable)",
+        help=f"OWNER/NAME; narrow to this repository (repeatable; default: ${REPO_ENV})",
     )
     # Spelled out rather than imported from `search.queries`, like `--kind` above: reaching
     # that module executes `ghlore/search/__init__.py`, which imports SQLAlchemy, and
@@ -150,7 +182,7 @@ def build_parser() -> argparse.ArgumentParser:
     t = sub.add_parser("thread", help="one thread, comments ranked by relevance")
     t.add_argument("number", type=int)
     t.add_argument("--focus", default="", help="rank the comments by this, best first")
-    t.add_argument("--repo", help="OWNER/NAME; needed when the token can see several")
+    t.add_argument("--repo", help=_REPO_HELP)
     t.add_argument(
         "--full",
         action="store_true",
@@ -163,7 +195,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="open pull requests that already claim to close this issue",
     )
     inflight.add_argument("number", type=int)
-    inflight.add_argument("--repo", help="OWNER/NAME; needed when the token can see several")
+    inflight.add_argument("--repo", help=_REPO_HELP)
     _also_after_the_verb(inflight, "--json")
 
     pr = sub.add_parser(
@@ -182,7 +214,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="the pull request that last changed this line, and what reviewers said on it",
     )
     w.add_argument("location", metavar="PATH:LINE")
-    w.add_argument("--repo", help="OWNER/NAME; needed when the token can see several")
+    w.add_argument("--repo", help=_REPO_HELP)
     _also_after_the_verb(w, "--json")
 
     st = sub.add_parser("status", help="index freshness and coverage")
@@ -201,7 +233,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("defs", help="definitions in a file, locally or with --repo")
     d.add_argument("path")
-    d.add_argument("--repo", help="OWNER/NAME; ask the daemon's working clone instead")
+    d.add_argument(
+        "--repo", help=f"OWNER/NAME; ask the daemon's working clone instead (default: ${REPO_ENV})"
+    )
     _also_after_the_verb(d, "--json")
 
     r = sub.add_parser(
@@ -212,17 +246,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     r.add_argument("symbol")
-    r.add_argument("--repo", help="OWNER/NAME; ask the daemon's working clone instead")
+    r.add_argument(
+        "--repo", help=f"OWNER/NAME; ask the daemon's working clone instead (default: ${REPO_ENV})"
+    )
     _also_after_the_verb(r, "--json")
 
     sym = sub.add_parser("symbol", help="the source of one definition, from the daemon's clone")
     sym.add_argument("qualname")
-    sym.add_argument("--repo", help="OWNER/NAME; needed when the token can see several")
+    sym.add_argument("--repo", help=_REPO_HELP)
     _also_after_the_verb(sym, "--json")
 
     g = sub.add_parser("grep", help="a regular expression over the daemon's working clone")
     g.add_argument("pattern")
-    g.add_argument("--repo", help="OWNER/NAME; needed when the token can see several")
+    g.add_argument("--repo", help=_REPO_HELP)
     g.add_argument("--path", help="glob the paths must match, e.g. 'src/**/modeling_*.py'")
     _also_after_the_verb(g, "--json")
 
@@ -231,7 +267,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="every definition of a symbol, grouped by whether the bodies agree",
     )
     c.add_argument("symbol")
-    c.add_argument("--repo", help="OWNER/NAME; needed when the token can see several")
+    c.add_argument("--repo", help=_REPO_HELP)
+    c.add_argument(
+        "--exact",
+        action="store_true",
+        help="group by the body's exact text, annotations and docstrings included",
+    )
     _also_after_the_verb(c, "--json")
 
     return p
@@ -271,6 +312,36 @@ def main(argv: list[str] | None = None) -> int:
 # -- history verbs ---------------------------------------------------------
 
 
+def _repo(args: argparse.Namespace) -> str | None:
+    """Which repository this call is about: ``--repo``, else ``GHLORE_REPO`` (issue #36).
+
+    ``None`` is not a failure and is not a guess -- it hands the question to the daemon,
+    which answers it if exactly one repository is in scope and otherwise refuses with the
+    list. That order matters: the flag has to win, so a session with a default set can
+    still ask about another repository without unsetting anything, and an empty variable
+    reads as unset rather than as a repository named ``""``.
+
+    Read here rather than as an ``argparse`` default so that the value is the environment
+    at *call* time, which is what a test that sets it and a shell that exports it after
+    import both expect.
+    """
+    return getattr(args, "repo", None) or os.environ.get(REPO_ENV) or None
+
+
+def _repos(args: argparse.Namespace) -> list[str]:
+    """The same default for ``search``, whose ``--repo`` is repeatable.
+
+    ``search`` spans the whole scope by design, so this is the one place the variable
+    *narrows* an answer that would otherwise have been wider. That is what setting it
+    asks for -- it names the repository the session is about -- and any ``--repo`` on the
+    call replaces it wholesale rather than adding to it, so the flag stays the last word.
+    """
+    if args.repos:
+        return args.repos
+    default = os.environ.get(REPO_ENV)
+    return [default] if default else []
+
+
 def _search(args: argparse.Namespace) -> int:
     payload = _call(
         args,
@@ -285,7 +356,7 @@ def _search(args: argparse.Namespace) -> int:
             "errors": args.error,
             "tests": args.test,
             "labels": args.label,
-            "repos": args.repos,
+            "repos": _repos(args),
             "since": args.since,
             "limit": args.limit,
             "compact": args.compact,
@@ -315,8 +386,8 @@ def _thread(args: argparse.Namespace) -> int:
         "presentation": str(_presentation(args)).lower(),
         "full": str(args.full).lower(),
     }
-    if args.repo:
-        query["repo"] = args.repo
+    if repo := _repo(args):
+        query["repo"] = repo
     payload = _call(args, "GET", f"/api/v1/thread/{args.number}", params=query)
     return _emit(
         args,
@@ -338,8 +409,8 @@ def _inflight(args: argparse.Namespace) -> int:
         "render": str(not args.json).lower(),
         "presentation": str(_presentation(args)).lower(),
     }
-    if args.repo:
-        query["repo"] = args.repo
+    if repo := _repo(args):
+        query["repo"] = repo
     payload = _call(args, "GET", f"/api/v1/inflight/{args.number}", params=query)
     return _emit(
         args,
@@ -361,8 +432,8 @@ def _why(args: argparse.Namespace) -> int:
         "render": str(not args.json).lower(),
         "presentation": str(_presentation(args)).lower(),
     }
-    if args.repo:
-        params["repo"] = args.repo
+    if repo := _repo(args):
+        params["repo"] = repo
     payload = _call(args, "GET", "/api/v1/why", params=params)
     return _emit(
         args,
@@ -439,8 +510,8 @@ def _map(args: argparse.Namespace) -> int:
 
 def _code_params(args: argparse.Namespace, **extra: Any) -> dict[str, str]:
     params = {key: value for key, value in extra.items() if value}
-    if args.repo:
-        params["repo"] = args.repo
+    if repo := _repo(args):
+        params["repo"] = repo
     return params
 
 
@@ -448,6 +519,12 @@ def _defs(args: argparse.Namespace) -> int:
     from ghlore.code.defs import definitions
     from ghlore.code.walk import read
 
+    # `args.repo`, not `_repo(args)`: for `defs` and `refs` the flag does not merely name a
+    # repository, it *switches the verb* from the tree you are standing in to the daemon's
+    # clone of HEAD. `GHLORE_REPO` says which repository a session is about; it must not
+    # silently move these two off the working copy, uncommitted edits and all, which is the
+    # only thing they offer that nothing else does. Where the flag is given, `_code_params`
+    # reads the same value back out of it.
     if args.repo:
         payload = _call(args, "GET", "/api/v1/code/defs", params=_code_params(args, path=args.path))
         return _emit(args, payload, lambda: _defs_text(payload["definitions"]))
@@ -551,9 +628,25 @@ def _grep(args: argparse.Namespace) -> int:
 
 
 def _grep_text(payload: dict[str, Any]) -> str:
+    """Both numbers named, because one of them used to mean the other thing (issue #37).
+
+    The summary read ``-- 3 in 4 files``, where 4 was the count of files *searched*. The
+    natural English reading is "appears in four files", and on the audit this verb is for --
+    *which models are affected* -- a file count that over-reports is a wrong answer in the
+    direction that looks like diligence. Three hits in two files across four searched is
+    three numbers, and saying only two of them was what made them ambiguous.
+
+    ``files_with_hits`` is counted from the hits rather than taken on faith, so it stays
+    right for the capped answer too: it describes the rows printed below it.
+    """
     hits = payload.get("hits") or []
     lines = [f"{hit['path']}:{hit['line']}  {hit['text']}" for hit in hits]
-    lines.append(f"-- {len(hits)} in {payload.get('files_searched', 0)} files")
+    with_hits = len({hit["path"] for hit in hits})
+    searched = payload.get("files_searched", 0)
+    lines.append(
+        f"-- {len(hits)} hit{'' if len(hits) == 1 else 's'} in {with_hits} of "
+        f"{searched} file{'' if searched == 1 else 's'} searched"
+    )
     if payload.get("truncated"):
         lines.append("   (capped: narrow it with --path)")
     return "\n".join(lines)
@@ -563,20 +656,47 @@ def _copies(args: argparse.Namespace) -> int:
     """Which copies diverge -- the question a repository that duplicates code on purpose
     actually asks (#7 item 4)."""
     payload = _call(
-        args, "GET", "/api/v1/code/copies", params=_code_params(args, symbol=args.symbol)
+        args,
+        "GET",
+        "/api/v1/code/copies",
+        params=_code_params(args, symbol=args.symbol, exact=str(args.exact).lower()),
     )
     return _emit(args, payload, lambda: _copies_text(payload))
 
 
 def _copies_text(payload: dict[str, Any]) -> str:
+    """The grouping, and what was normalized away to reach it (issue #35).
+
+    Two lines of disclosure rather than none, because the answer changed shape: a group is
+    now "these bodies do the same thing" rather than "these bodies are the same text", and
+    a reader who is not told that will read a shape of one as a textual difference and go
+    looking for a typo.
+
+    The singleton callout is the other half. On a symbol with 186 definitions the row worth
+    reading is almost always the shape with one member -- that is what *diverged* -- and it
+    sorts last, under everything else.
+    """
     groups = payload.get("groups") or []
     lines = [
         f"{payload.get('total', 0)} definitions of {payload.get('symbol')} "
         f"in {len(groups)} shape{'' if len(groups) == 1 else 's'}"
     ]
+    if payload.get("exact"):
+        lines.append("(grouped by the exact text of the body)")
+    else:
+        lines.append(
+            "(grouped by what the body does: type annotations, docstrings and comments "
+            "are normalized away first — `--exact` groups by the text instead)"
+        )
     for index, group in enumerate(groups, start=1):
-        note = " (the majority shape)" if index == 1 and len(groups) > 1 else ""
-        lines.append(f"\n-- shape {index}: {group['count']} copies{note}")
+        count = group["count"]
+        if count == 1 and len(groups) > 1:
+            note = "  <- the only one of its shape"
+        elif index == 1 and len(groups) > 1:
+            note = " (the majority shape)"
+        else:
+            note = ""
+        lines.append(f"\n-- shape {index}: {count} cop{'y' if count == 1 else 'ies'}{note}")
         lines += [f"   {copy['path']}:{copy['start_line']}" for copy in group["copies"]]
     if payload.get("truncated"):
         lines.append("\n(capped.)")

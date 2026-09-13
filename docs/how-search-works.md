@@ -31,7 +31,7 @@ The daemon says which of these it can do rather than asking you to trust a docum
 
 ```
 $ ghlore status
-version      0.3.2
+version      0.3.4
 backend      postgresql / ts_rank_cd  capabilities: fulltext, weighted
 ```
 

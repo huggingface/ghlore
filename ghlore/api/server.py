@@ -250,13 +250,21 @@ def build_app(
         bare number is ambiguous and guessing would silently answer about the wrong
         project. A repository outside the scope is a 404 rather than a 403: whether it
         exists is not this token's business.
+
+        The message names ``GHLORE_REPO`` (issue #36) because refusing once is cheap and
+        refusing twenty times is the actual cost: a field run recovered from this in one
+        step and then passed ``--repo`` on every one of ~20 subsequent calls. The remedy
+        that ends the session's tax belongs in the sentence that first mentions the tax.
         """
         repos = token.scope(deps.indexed_repos())
         if repo is None:
             if len(repos) != 1:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"pass repo=: more than one repository is in scope {list(repos)}",
+                    detail=(
+                        f"pass repo=: more than one repository is in scope {list(repos)}"
+                        " — or set GHLORE_REPO to default it for the whole session"
+                    ),
                 )
             return repos[0]
         if repo not in repos:
@@ -397,29 +405,45 @@ def build_app(
                 "path_glob": path,
                 "hits": [vars(hit) for hit in result.hits],
                 "files_searched": result.files_searched,
+                # Both denominators, because one of them was doing duty as the other
+                # (issue #37): `files_searched` counts what was read, `files_with_hits`
+                # what matched, and a summary naming only one reads as the other.
+                "files_with_hits": len({hit.path for hit in result.hits}),
                 "truncated": result.truncated,
             }
         )
 
     @app.get("/api/v1/code/copies")
-    def code_copies(token: Caller, symbol: str, repo: str | None = None) -> Response:
-        """Every definition of ``symbol``, grouped by whether the bodies agree (#7 item 4)."""
+    def code_copies(
+        token: Caller, symbol: str, repo: str | None = None, exact: bool = False
+    ) -> Response:
+        """Every definition of ``symbol``, grouped by whether the bodies agree (#7 item 4).
+
+        ``exact`` groups on the body's text, which is what this did until issue #35: on
+        generated code that made every model its own shape, so it is now the opt-in.
+        """
         name, root = _clone_root(token, repo)
-        result = copies(root, symbol)
+        result = copies(root, symbol, exact=exact)
         return _json(
             {
                 "repo": name,
                 "head": deps.clones.info(name).head,
                 "symbol": symbol,
                 "total": len(result.copies),
+                "exact": exact,
                 "truncated": result.truncated,
                 "groups": [
                     {
-                        "body_hash": body_hash,
+                        "shape_hash": shape_hash,
                         "count": len(group),
+                        # How many distinct bodies this shape holds. 1 means the members
+                        # are textually identical; more is the measure of what
+                        # normalization absorbed, and it is the number a reader doubting
+                        # the grouping wants to see.
+                        "bodies": len({copy.body_hash for copy in group}),
                         "copies": [vars(c) for c in group],
                     }
-                    for body_hash, group in result.groups.items()
+                    for shape_hash, group in result.groups.items()
                 ],
             }
         )

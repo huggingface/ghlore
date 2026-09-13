@@ -120,3 +120,123 @@ def test_the_default_api_is_the_deployment_and_is_overridable() -> None:
     assert cli.build_parser().parse_args(["--api", "http://127.0.0.1:9999", "status"]).api == (
         "http://127.0.0.1:9999"
     )
+
+
+# -- GHLORE_REPO (issue #36) -----------------------------------------------
+
+
+@pytest.mark.parametrize("verb,argv", [("thread", ["42"]), ("why", ["a.py:1"]), ("grep", ["x"])])
+def test_the_environment_supplies_the_repository_when_the_flag_does_not(
+    monkeypatch, verb: str, argv: list[str]
+) -> None:
+    """The per-call tax this removes: a daemon serving three repositories makes `--repo`
+    mandatory on every bare number, and one field run passed it on ~20 consecutive calls."""
+    monkeypatch.setenv(cli.REPO_ENV, "huggingface/transformers")
+    args = cli.build_parser().parse_args([verb, *argv])
+
+    assert cli._repo(args) == "huggingface/transformers"
+
+
+def test_the_flag_beats_the_environment(monkeypatch) -> None:
+    """So a session with a default set can still ask about another repository without
+    unsetting anything."""
+    monkeypatch.setenv(cli.REPO_ENV, "huggingface/transformers")
+    args = cli.build_parser().parse_args(["thread", "42", "--repo", "huggingface/trl"])
+
+    assert cli._repo(args) == "huggingface/trl"
+
+
+def test_an_empty_variable_reads_as_unset_rather_than_as_a_repository(monkeypatch) -> None:
+    """`export GHLORE_REPO=` must hand the question back to the daemon, not ask it about a
+    repository named "", which is a 404 with a confusing sentence in it."""
+    monkeypatch.setenv(cli.REPO_ENV, "")
+
+    assert cli._repo(cli.build_parser().parse_args(["thread", "42"])) is None
+    assert cli._repos(cli.build_parser().parse_args(["search", "x"])) == []
+
+
+def test_search_takes_the_default_too_but_the_flag_replaces_it(monkeypatch) -> None:
+    """`search` spans the whole scope by design, so this is the one verb the variable
+    *narrows*. That is what naming the session's repository asks for."""
+    monkeypatch.setenv(cli.REPO_ENV, "huggingface/transformers")
+
+    assert cli._repos(cli.build_parser().parse_args(["search", "x"])) == [
+        "huggingface/transformers"
+    ]
+    assert cli._repos(
+        cli.build_parser().parse_args(["search", "x", "--repo", "huggingface/trl"])
+    ) == ["huggingface/trl"]
+
+
+def test_the_environment_never_moves_defs_and_refs_off_the_working_tree(monkeypatch) -> None:
+    """For these two `--repo` does not name a repository, it *switches the verb* to the
+    daemon's clone of HEAD. The tree you are standing in, uncommitted edits included, is the
+    only thing they offer that nothing else does, so only the flag may give it up."""
+    monkeypatch.setenv(cli.REPO_ENV, "huggingface/transformers")
+
+    assert cli.build_parser().parse_args(["defs", "a.py"]).repo is None
+    assert cli.build_parser().parse_args(["refs", "helper"]).repo is None
+
+
+# -- what the code verbs print ---------------------------------------------
+
+
+def test_grep_names_both_denominators() -> None:
+    """Issue #37: the summary read `3 in 4 files`, where 4 counted the files *searched*.
+    The natural reading is the other one, and an agent sizing blast radius acts on it."""
+    text = cli._grep_text(
+        {
+            "hits": [
+                {"path": "a.py", "line": 1, "text": "x"},
+                {"path": "a.py", "line": 2, "text": "x"},
+                {"path": "b.py", "line": 9, "text": "x"},
+            ],
+            "files_searched": 4,
+        }
+    )
+
+    assert text.splitlines()[-1] == "-- 3 hits in 2 of 4 files searched"
+
+
+def test_grep_says_one_hit_rather_than_1_hits() -> None:
+    text = cli._grep_text({"hits": [{"path": "a.py", "line": 1, "text": "x"}], "files_searched": 1})
+
+    assert text.splitlines()[-1] == "-- 1 hit in 1 of 1 file searched"
+
+
+def test_grep_still_discloses_its_cap_with_the_remedy_in_it() -> None:
+    """The one thing this command already got right, and worth keeping while rewording
+    around it: the cap says so, inline, with what to do about it."""
+    text = cli._grep_text({"hits": [], "files_searched": 3, "truncated": True})
+
+    assert "(capped: narrow it with --path)" in text
+
+
+def test_copies_calls_out_the_shape_of_one() -> None:
+    """On a symbol with 186 definitions the singleton is the row the question was about,
+    and it sorts last, under everything else (issue #35)."""
+    text = cli._copies_text(
+        {
+            "symbol": "compute_default_rope_parameters",
+            "total": 3,
+            "groups": [
+                {"count": 2, "copies": [{"path": "a.py", "start_line": 1}] * 2},
+                {"count": 1, "copies": [{"path": "odd.py", "start_line": 90}]},
+            ],
+        }
+    )
+
+    assert "-- shape 1: 2 copies (the majority shape)" in text
+    assert "-- shape 2: 1 copy  <- the only one of its shape" in text
+
+
+def test_copies_says_what_it_normalized_away() -> None:
+    """The answer changed shape -- a group is now "these do the same thing" rather than
+    "these are the same text" -- and a reader not told that reads a divergence as a typo."""
+    grouped = cli._copies_text({"symbol": "f", "total": 1, "groups": [{"count": 1, "copies": []}]})
+    exact = cli._copies_text(
+        {"symbol": "f", "total": 1, "exact": True, "groups": [{"count": 1, "copies": []}]}
+    )
+
+    assert "normalized away" in grouped and "--exact" in grouped
+    assert "exact text" in exact and "normalized away" not in exact

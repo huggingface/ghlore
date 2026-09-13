@@ -28,17 +28,23 @@ Two things make it answer questions an agent would otherwise answer badly:
 ```bash
 pip install git+https://github.com/huggingface/ghlore   # no PyPI release yet
 export GHLORE_API=https://your-ghlore  # a running `ghlored serve`
+export GHLORE_REPO=owner/name          # the default for --repo
 export GHLORE_TOKEN=…                  # if that daemon requires one
 
 ghlore search "AttributeError: 'NoneType' object has no attribute 'shape'" --kind failure
 ghlore search "why is this cast here" --kind rationale --file src/model.py
 ghlore search --symbol GemmaRotaryEmbedding          # every mention, exactly matched
-ghlore inflight 47720                  # is somebody already fixing this?
-ghlore why src/model.py:90             # what was said about this line when it was written
+ghlore inflight 47720 --repo owner/name              # is somebody already fixing this?
+ghlore why src/model.py:90 --repo owner/name         # what was said about this line
 ghlore copies compute_default_rope_parameters --repo owner/name   # which copies diverge
 ```
 
-More worked queries, and the four ways a healthy index returns nothing:
+`--repo` is required on a bare number or path whenever the daemon serves more than one
+repository: it refuses rather than guessing which project you meant. `GHLORE_REPO` is the
+default that makes the flag a per-call override instead of a per-call tax.
+
+`ghlore --help` is the reference — every verb, the order to reach for them in, and the
+environment. More worked queries, and the four ways a healthy index returns nothing:
 [`docs/cli.md`](docs/cli.md). There is no MCP server on purpose: any agent with a shell can
 already call an HTTP API.
 
@@ -50,7 +56,7 @@ already call an HTTP API.
 | **Exact signals** | errors, files, symbols, test ids, shas, extracted at ingest and repeatable as filters |
 | **Trust tiers** | maintainer / contributor / bot, as a filter rather than a weight |
 | **Schema to join on** | "which threads touched this file", and a bug and its merged fix as one record |
-| **The code, server-side** | `why PATH:LINE`, `grep`, `copies`, `symbol` against a working clone the daemon keeps |
+| **The code, server-side** | `why PATH:LINE`, `grep`, `copies`, `symbol`, and `defs`/`refs` with `--repo`, against a working clone the daemon keeps |
 | **Throughput** | every query is a Postgres query and makes no GitHub request; ten agents in parallel cost the same as one |
 
 The trade is freshness: an answer is at most one poll interval behind.
@@ -68,7 +74,8 @@ interface; setup is in [`docs/operations.md`](docs/operations.md).
 - [`docs/why-not-github-search.md`](docs/why-not-github-search.md) — the comparison.
 - [`docs/architecture.md`](docs/architecture.md) — what is indexed, what is deliberately
   not, the symbol lens, and language plugins.
-- [`docs/agents.md`](docs/agents.md) — wiring it into a harness.
+- [`docs/agents.md`](docs/agents.md) — wiring it into a harness (not to be confused with
+  `AGENTS.md` below, which is the contributor contract for this repository).
 - [`docs/ranking.md`](docs/ranking.md) — the scoring model and what the benchmark says.
 - [`docs/operations.md`](docs/operations.md) — backfill, poll, clones, tokens, serving.
 - [`docs/security.md`](docs/security.md) — the properties and how each is enforced.

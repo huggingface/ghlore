@@ -5,8 +5,9 @@ build plan, which is held with the deployment that commissioned it. This page is
 it is what the queries actually look like, and the four ways they come back empty when the
 index is healthy.
 
-Every command below was run against a real index of `huggingface/serge`: 114 threads, 415
-documents, Postgres backend.
+Every command below was run against a real index, Postgres backend. The deployment now
+holds three repositories — `huggingface/serge`, `huggingface/transformers`,
+`huggingface/trl` — which is why `--repo` is on the examples that need it.
 
 **The sample output is elided.** A real response is wrapped in the untrusted-content
 envelope, and inside it the quoted lines — a title, a snippet, a body — each carry a `>`
@@ -17,20 +18,47 @@ blocks below drop both, to keep the shape of the answer readable.
 
 ## The verbs
 
+`ghlore --help` carries this list too, plus the order to reach for them in — and it arrives
+byte-exact, needs no network and is already installed, which this page is not. Read it
+first; this page is the long form.
+
 | | |
 | --- | --- |
 | `search QUERY` | the index. Filters: `--error`, `--test`, `--file`, `--symbol`, `--label` (repeatable, ANDed with the text); `--kind failure\|precedent\|rationale`; `--trust authoritative\|machine`; `--repo`, `--since`, `--limit`, `--sort newest`, `--no-expand` |
 | `thread N` | one thread. `--focus "…"` orders its comments and never empties them; `--full` serves the opening post whole, reproduction included |
 | `inflight N` | is somebody already fixing this? Threads claiming to close `N`, open ones first |
+| `why PATH:LINE` | the pull request that last changed this line, and the review comments anchored near it |
 | `status` | counts, per-source freshness, and which search backend answered |
-| `map` / `defs` / `refs` | your local checkout, no server and no network |
-| `why PATH:LINE` | the review comments left on this line's code when it was written — milestone 4, a stub today |
+| `grep REGEX` | a regular expression over the daemon's working clone at HEAD. `--path` globs it |
+| `symbol QUALNAME` | one definition's source, and how many definitions of that name exist |
+| `copies SYMBOL` | every definition of a symbol, grouped by whether the bodies agree. `--exact` groups by the text |
+| `map` | ranked map of your local checkout. No server, no network, no token |
+| `defs PATH` / `refs SYMBOL` | your local checkout by default; `--repo` asks the daemon's clone instead |
 | `precedent` | completed units of work — milestone 4, a stub today |
 
-Global: `--json` for machine-readable output, `--compact` to trim snippets, `--api` to
-override `GHLORE_API`. `--json` and `--compact` are accepted on **either side** of the verb.
-No results is exit 0 with an empty result, never nonzero — so an agent cannot mistake
-"nothing in the index" for "the tool is broken".
+Global: `--json` for machine-readable output, `--compact` to trim snippets, `--plain` for
+the piped form on a terminal, `--api` to override `GHLORE_API`. `--json` and `--compact` are
+accepted on **either side** of the verb. No results is exit 0 with an empty result, never
+nonzero — so an agent cannot mistake "nothing in the index" for "the tool is broken".
+
+### The environment
+
+| | |
+| --- | --- |
+| `GHLORE_API` | the daemon's base URL |
+| `GHLORE_REPO` | the default for `--repo`. Overridden by the flag, per call |
+| `GHLORE_TOKEN` | only if that daemon requires one |
+
+**Set `GHLORE_REPO` before anything else on a multi-repository daemon.** Six verbs —
+`thread`, `inflight`, `why`, `symbol`, `grep`, `copies` — refuse a bare number or path
+rather than guess which repository it belongs to, so without a default every call in a
+single-repository session carries `--repo`. One field run passed it on twenty consecutive
+calls. `defs` and `refs` are the exception on purpose: for them `--repo` does not merely
+name a repository, it switches the verb from the tree you are standing in to the daemon's
+clone, and an environment variable must not do that silently.
+
+Examples below carry `--repo` anyway, because an example is copied more often than a rule
+is read.
 
 ---
 
@@ -139,7 +167,7 @@ $ ghlore search "review" --trust machine
 ## One thread, without all of it
 
 ```
-$ ghlore thread 92 --focus "backoff retry"
+$ ghlore thread 92 --focus "backoff retry" --repo huggingface/serge
 ...
 -- 10 of 30 comments, best first for 'backoff retry' (2 of 30 carry every term) --
 (20 not shown: a thread is never returnable in full.)
@@ -209,7 +237,7 @@ its first several hundred characters on environment boilerplate and the reproduc
 starts after it.
 
 ```bash
-ghlore thread 48630 --full            # the whole opening post, reproduction included
+ghlore thread 48630 --full --repo huggingface/transformers   # the opening post whole
 ```
 
 ### "Did this pull request touch that file?"
@@ -237,13 +265,22 @@ Merged into one array — which is what it used to be — that last line answere
 question with a wrong yes, and the same file appeared twice in two different spellings.
 
 **`--repo` is required on a bare number when more than one repository is in scope.** The
-deployment indexes two, so `ghlore thread 47720` there answers
-`400: pass repo=: more than one repository is in scope ['huggingface/serge',
-'huggingface/transformers']`. That is deliberate — a number alone is ambiguous and guessing
-would silently answer about the wrong project — and the message lists what to choose from.
-It has nothing to do with authentication: an open daemon resolves the anonymous caller to
-every indexed repository, so the same rule applies. `search` needs no `--repo` because it
-spans the whole scope by design.
+deployment indexes three, so a bare `ghlore thread 47720` there answers
+
+```
+400: pass repo=: more than one repository is in scope ['huggingface/serge',
+'huggingface/transformers', 'huggingface/trl'] — or set GHLORE_REPO to default it
+for the whole session
+```
+
+That is deliberate — a number alone is ambiguous and guessing would silently answer about
+the wrong project — and the message lists what to choose from. It has nothing to do with
+authentication: an open daemon resolves the anonymous caller to every indexed repository,
+so the same rule applies. `search` needs no `--repo` because it spans the whole scope by
+design.
+
+`GHLORE_REPO` is the standing answer: export it once and the flag is a per-call override
+rather than a per-call tax.
 
 ## "Is somebody already fixing this?"
 
@@ -252,7 +289,7 @@ and it prevents an agent's most expensive mistake — writing a patch for someth
 in review.
 
 ```
-$ ghlore inflight 48630
+$ ghlore inflight 48630 --repo huggingface/transformers
 
 1 thread claims to close huggingface/transformers#48630
 
@@ -275,6 +312,10 @@ precisely the duplicate you must not create.
 
 `map`, `defs` and `refs` need **no server, no index and no network** — they read the
 checkout you are standing in, uncommitted edits included, which is the whole point (§1).
+`defs` and `refs` take `--repo` to ask the daemon's clone of HEAD instead, which is a
+different question: the branch you are mid-edit on is the one thing the index has never
+seen. `map` is local-only. `GHLORE_REPO` deliberately does not switch these two — that is
+a decision about *which tree*, and only the flag makes it.
 
 ```
 $ ghlore defs ghlore/ingest/authority.py
@@ -352,12 +393,14 @@ where the remote will not serve an old object.
 
 ```
 $ ghlore copies compute_default_rope_parameters --repo huggingface/transformers
-38 definitions of compute_default_rope_parameters in 2 shapes
+186 definitions of compute_default_rope_parameters in 2 shapes
+(grouped by what the body does: type annotations, docstrings and comments are
+ normalized away first — `--exact` groups by the text instead)
 
--- shape 1: 37 copies (the majority shape)
+-- shape 1: 185 copies (the majority shape)
    src/transformers/models/llama/modeling_llama.py:88
    …
--- shape 2: 1 copies
+-- shape 2: 1 copy  <- the only one of its shape
    src/transformers/models/gpt_neox_japanese/modeling_gpt_neox_japanese.py:90
 
 $ ghlore grep 'partial_rotary_factor' --repo huggingface/transformers \
@@ -365,13 +408,38 @@ $ ghlore grep 'partial_rotary_factor' --repo huggingface/transformers \
 $ ghlore symbol GPTNeoXJapaneseRotaryEmbedding.forward --repo huggingface/transformers
 ```
 
-`copies` groups by the body rather than listing definitions, because in a repository that
-duplicates model code on purpose the question is never *where is it* but *which copies
-diverge* — the shape of `huggingface/transformers#48630`. Indentation is normalized, so a
-function lifted into a class groups with its original.
+`copies` groups rather than listing, because in a repository that duplicates model code on
+purpose the question is never *where is it* but *which copies diverge* — the shape of
+`huggingface/transformers#48630`.
 
-`symbol` prints how many definitions of that name exist. Serving the first of 38 as *the*
+**What "the same body" means here matters, and it is not the text.** Grouping on the text
+was the first implementation and it made the verb useless on precisely this corpus: those
+186 definitions came back as **172 shapes**, every group one model's generated file paired
+with its own `modular_*.py`, and a "majority shape" of two. The entire split was one token —
+
+```python
+def compute_default_rope_parameters(config: GPTNeoXConfig, device=None, **kwargs)
+def compute_default_rope_parameters(config: LlamaConfig,  device=None, **kwargs)
+```
+
+— so every model was its own shape before any difference in what it *computes* was
+considered, and the one model that had diverged was invisible among 171 that had not. So
+type annotations, docstrings, comments and formatting are normalized away before the
+grouping, along with indentation: a function lifted into a class groups with its original.
+`--exact` keeps the old rule for whoever wants the text, and `--json` carries both hashes
+per copy plus `bodies`, the number of distinct texts inside each shape.
+
+**A shape of one is called out.** On a symbol with 186 copies the singleton is almost
+always the row the question was about.
+
+`symbol` prints how many definitions of that name exist. Serving the first of 186 as *the*
 body is a wrong answer a caller cannot see.
+
+`grep` names both denominators — `-- 3 hits in 2 of 4 files searched`. It used to print
+`3 in 4 files`, where 4 was the count of files *read*; an agent sizing blast radius reads
+that as "appears in four files", and on an audit a file count that over-reports is a wrong
+answer in the direction that looks like diligence. The cap discloses itself on its own
+line, with the remedy in it.
 
 **HEAD, not the tree as it was.** These verbs answer "what does this code look like now",
 which is what an audit asks. The lens that reads a comment's tree at the time it was
@@ -400,8 +468,8 @@ $ ghlore search "429" --file reviewbot/llm.py      → 0 hits   # nothing said b
 ```
 
 Three things make one match nothing on an index that does hold the answer. `--file` takes
-the path **as the repository spells it**, not an absolute one from a traceback — mapping
-those needs the working clone of milestone 4. `--test` takes a runner id
+the path **as the repository spells it**, not an absolute one from a traceback — nothing
+maps one to the other for you. `--test` takes a runner id
 (`tests/test_x.py::test_y`, with or without its `[params]`), not a bare function name; a
 bare name is a `--symbol`. And `--error` may be given a whole pasted traceback, which is
 normalized into the form the index stores — but a *paraphrase* of an error is text, so pass
@@ -411,15 +479,18 @@ it as the query instead.
 `--kind precedent`, which imply it — on an index where `ghlored authority` never ran returns
 nothing at all. Check `trust_floor` in the `--json` response.
 
-**4. Two verbs are parsed but not built.** They say so rather than returning an empty
-result that reads like an answer:
+**4. One verb is parsed but not built.** It says so rather than returning an empty result
+that reads like an answer, and `--help` marks it:
 
 ```
 $ ghlore precedent --kind bug_fix
 ghlore precedent: not implemented yet (milestone 4, the build plan section 13)
-$ ghlore why ghlore/cli.py:10
-ghlore why: not implemented yet (milestone 4, the build plan section 13)
 ```
+
+`why` was the other one in this block for two releases after it shipped, which is the drift
+`tests/unit/test_prose_surfaces.py` now catches: no page may call a shipped verb
+unimplemented, and the list of shipped verbs comes from the parser rather than from a copy
+of it.
 
 A daemon that is *down* is a different message from an index that is empty, and the client
 tells you which — that distinction is deliberate (§12).
@@ -428,13 +499,20 @@ tells you which — that distinction is deliberate (§12).
 
 ```
 $ ghlore status
-version   0.3.0
-backend   postgresql / ts_rank_cd  capabilities: fulltext
-schema    applied [1, 2, 3], pending []
-index     114 threads, 415 documents, 332 raw objects
+version   0.3.4
+backend   postgresql / ts_rank_cd  capabilities: fulltext, weighted
+schema    applied [1, 2, 3, 4, 5, 6, 7], pending []
+index     55168 threads, 517276 documents, 332 raw objects
   huggingface/serge [threads] high-water 2026-09-03T06:55:06+00:00 last-ok …
+  huggingface/transformers [threads] high-water 2026-09-12T18:41:02+00:00 last-ok …
+  huggingface/trl [threads] high-water 2026-09-12T18:44:15+00:00 last-ok …
 quota     1/60 per minute, 1/5000 today
 ```
+
+**Three rows, and that is the precondition rather than a footnote about it.** This block is
+the reader's mental model of `status`; when it showed one repository it also showed the one
+case in which a bare `ghlore thread 47720` never fails. Every row here is a repository
+`--repo` has to choose between, and `GHLORE_REPO` is how you stop choosing.
 
 `capabilities` is how you tell which engine answered. A SQLite index scores with `bm25` and
 has no trigram or vector tier, so a result set from one says nothing about the other —
@@ -481,7 +559,10 @@ and shared with the web UI for the same reason.
 un-format: the comments array, `body_chars`/`body_truncated`, the three file lists,
 `files_total`/`files_collected`, `comments_total` with `comments_machine_suppressed`,
 `indexed_at`, `selection`, per-hit `score` with its
-`breakdown`, and each hit's `document_id`, `source_id`, `chunk_index` and `passages`.
+`breakdown`, and each hit's `document_id`, `source_id`, `chunk_index` and `passages`. The
+code verbs the same way: `grep` carries `files_searched` and `files_with_hits` separately,
+and `copies` carries `exact`, each group's `shape_hash` and `bodies`, and each copy's
+`body_hash`, `shape_hash` and `normalized`.
 `--json` and `--compact` are accepted on either side of the verb.
 
 If you do read the text, these hold within a version — and the version is enforced on every

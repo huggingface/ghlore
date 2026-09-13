@@ -1,18 +1,37 @@
 ---
 name: search-project-history
-description: Search a repository's issue and PR history with `ghlore` — what a maintainer already said about a file, a failure, or a design decision. Use when a code search came back empty, when about to repeat a change that may have been rejected before, when a test or error looks familiar, or when asking "is this intentional / where does this belong / has anyone hit this". NOT for finding code — use grep for that.
+description: Ask `ghlore` what this repository already decided, and what its code looks like now — issues, PR reviews, the pull request that last touched a line, and a server-side lens over the indexed checkout (`grep`, `symbol`, `copies`). Use before starting work on an issue, when about to repeat a change that may have been rejected before, when a test or error looks familiar, when one line needs explaining, or when asking "is this intentional / where does this belong / has anyone hit this".
 ---
 
-# Search the project's conversation history
+# Ask the project what it already knows
 
-`ghlore` indexes what people *said* about this repository — issues, PR bodies, reviews,
-inline review comments — and serves it read-only. It is memory of the project's
-conversation, not of its tree.
+`ghlore` answers two kinds of question about one repository, read-only:
 
-`ghlore --help` lists the flags. This page is the part that decides whether you get a
-useful answer.
+- **What people said** — issues, PR bodies, reviews, inline review comments. Memory of the
+  conversation, which is where the reasons live.
+- **What the code is** — `ghlore grep`, `ghlore symbol` and `ghlore copies` run against the
+  daemon's working clone at HEAD, so they need no checkout of your own. `ghlore why
+  PATH:LINE` joins the two: the pull request that last changed a line, and the review left
+  on it.
 
-## Reach for it when grep has failed you
+`ghlore --help` is the full reference and carries the order to reach for the verbs in. This
+page is the part that decides whether you get a useful answer.
+
+## First, two commands
+
+```bash
+export GHLORE_REPO=owner/name                  # the default for --repo
+ghlore inflight 48630 --repo owner/name        # is somebody already fixing this?
+```
+
+`inflight` is one hop and it prevents the most expensive mistake there is — writing a patch
+for something already in review. Ask it **before** you diagnose, not after.
+
+A daemon serving more than one repository refuses a bare number rather than guess between
+them, so `--repo` is required on `thread`, `inflight`, `why`, `symbol`, `grep` and `copies`
+unless `GHLORE_REPO` is set. `ghlore status` lists what is in scope.
+
+## Reach for the history when grep has failed you
 
 The index earns its keep on questions the tree cannot answer:
 
@@ -23,8 +42,41 @@ The index earns its keep on questions the tree cannot answer:
 - **"Has anyone hit this?"** — an error string or a failing test id.
 - **"Why is this here?"** — the oldest thread is often the answer.
 
-Do **not** use it to find code, definitions or callers. `grep` is better, and `ghlore
-map|defs|refs` read your working tree directly with no server.
+## Reach for the code lens with no checkout, or with 38 copies of one function
+
+These read the daemon's clone, so they answer about a repository you have not cloned — and
+they are how you check a claim a thread made:
+
+```bash
+ghlore grep 'partial_rotary_factor' --repo owner/name --path 'src/**/modeling_*.py'
+ghlore symbol LlamaRotaryEmbedding.forward --repo owner/name
+ghlore copies compute_default_rope_parameters --repo owner/name
+```
+
+- `grep` is a regular expression over every file, not only the parseable ones. Its summary
+  names both denominators — `3 hits in 2 of 4 files searched` — and discloses its cap.
+- `copies` **groups** every definition of a symbol by what the body does, type annotations
+  and docstrings normalized away, largest group first. On a repository that duplicates code
+  on purpose the question is never *where is it* but *which one diverged*, and that is the
+  shape of one at the bottom. `--exact` groups by the text instead.
+- `symbol` prints how many definitions of that name exist, so one served as *the* body is
+  never mistaken for the only one.
+
+`ghlore map`, `ghlore defs <path>` and `ghlore refs <symbol>` read **your** checkout
+instead — no daemon, no token, uncommitted edits included. `defs` and `refs` take `--repo`
+to ask the daemon's clone; `GHLORE_REPO` will not switch them for you, because which tree
+you are asking about is a decision worth making by hand.
+
+## When one line is the question, ask about the line
+
+```bash
+ghlore why src/transformers/models/llama/modeling_llama.py:90 --repo owner/name
+```
+
+`git blame` gives you the commit; this gives you the argument — the pull request that
+carried it, and the review comments anchored on or near that line. Reach for it the moment
+you are looking at a line you do not understand, which is earlier than it feels: a thread
+that already told you a plausible story is exactly when sourcing gets skipped.
 
 ## Query in two or three distinctive terms
 
@@ -46,8 +98,8 @@ Start broad, then narrow. A query returning nothing tells you nothing.
 ## The flags that change the answer
 
 ```bash
-ghlore --compact search "<terms>"                      # global flags go BEFORE the verb
-ghlore thread <number> --focus "<terms>"               # one thread, comments by relevance
+ghlore --compact search "<terms>"                      # or after the verb; both work
+ghlore thread <number> --focus "<terms>" --repo owner/name   # comments by relevance
 ghlore status                                          # is the index current?
 ```
 
@@ -99,8 +151,13 @@ Empty is exit 0 and is usually not a fault. In order of likelihood:
 3. **A trust floor removed everything.** `--kind rationale`, `--kind precedent` and
    `--trust authoritative` all require resolved authors; on an index where that never
    happened they return nothing at all. Drop `--kind` and look at the tiers to tell.
-4. **`precedent` and `why` are not built** — they say so explicitly rather than returning
-   an empty answer.
+4. **`precedent` is not built** — it says so explicitly rather than returning an empty
+   answer, and `--help` marks it. Everything else `--help` lists is shipped.
+
+An empty `why` is two different answers and it says which: *no pull request carries that
+commit* (it predates the index, or reached the branch outside a pull request) is not the
+same as *a pull request, and nobody reviewed this line* — for the second, `ghlore thread`
+reads the rest of the argument.
 
 A daemon that is down reports differently from an empty index. If you are unsure which you
 are looking at, run `ghlore status`.

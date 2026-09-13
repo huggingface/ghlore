@@ -32,8 +32,11 @@ resolution with the query-kind trust floors (§13.1 #9), **§5.3's extraction pa
 what it measured), **§6's query expansion** (§10.4), and **§6's weighted ranking**
 (§10.5). `ghlored migrate |
 fetch | backfill | sample | derive | poll | sweep | authority | mine | judge | bench |
-serve | status` and `ghlore search | thread | inflight | status | map | defs | refs` work
-end to end.
+serve | status` and `ghlore search | thread | inflight | why | status | map | defs | refs |
+symbol | grep | copies` work end to end; `precedent` is the one verb still a stub, and
+`--help` marks it. Do not write that list from memory — `ghlore.guidance.shipped_verbs()`
+derives it from the parser, and `tests/unit/test_prose_surfaces.py` holds every
+reader-facing surface to it (#40).
 ~11,000 lines under `ghlore/`, **806 tests**, every store-level and retrieval-level one on
 both dialects. The `--file`/`--symbol`/`--error`/`--test` filters answer. **Retrieval is
 ranked**: full text, filters, the trust floor, the expansion fan-out and §6's weighted
@@ -381,6 +384,7 @@ GHLORE_API=http://localhost:8080 ghlore search "some error text"
 | `ghlore/security/` | untrusted-content envelope, secret redaction |
 | `ghlore/bench/` | §10's benchmark: `dataset.py` the frozen set, `mine.py` the candidates, `judge.py` the label fold, `run.py` the runner and the two baselines |
 | `ghlore/render.py` | dicts in, text out. **One renderer**, shared by the CLI and the UI's raw view — stdlib only, which is what lets it sit on both sides of the boundary |
+| `ghlore/guidance.py` | the prose that describes the verbs. **One owner**, rendered into `--help` and the page, and the source of the verb list `tests/unit/test_prose_surfaces.py` holds `docs/cli.md` and the skill to. Text and a lazy parser read, nothing else |
 | `ghlore/cli.py` | the client. Imports none of the above except `code`, `render` and `security` |
 | `benchmarks/` | §10's evaluation sets, one JSONL per corpus. Data, not code — the header carries the corpus window and every example carries who judged it |
 
@@ -652,3 +656,10 @@ The load-bearing assertion is **idempotency**: index a fixture twice, assert zer
 on the second pass. Store tests are parametrized over both dialects and **skip** Postgres
 when unconfigured — they never silently pass. Language providers share one conformance
 suite, including a file with a syntax error.
+
+**Prose is code here too.** Four surfaces described the verbs, one had a drift test, and
+that was the only one still correct a release later — the skill was telling agents not to
+use the two verbs that answered a real maintainer's question. `test_prose_surfaces.py`
+parametrizes the invariant over all of them: every surface names every shipped verb in
+command form, every runnable example of a repo-scoped verb carries `--repo`, and no page
+calls a shipped verb unimplemented. Derive the verb list from the parser, never copy it.

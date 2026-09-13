@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from ghlore.code import survey
 from ghlore.code.survey import copies, grep, symbol_body
 
 CANONICAL = """\
@@ -57,6 +58,126 @@ def test_copies_ignores_indentation_so_a_lifted_function_is_not_a_divergence(tmp
 
     assert len(result.copies) == 2
     assert len(result.groups) == 1
+
+
+# The shape of the corpus this verb is pointed at: `transformers` generates every
+# `modeling_*.py` from a `modular_*.py`, so two models' copies of one function are the same
+# code with a different config type annotated on the parameter and a different model named
+# in the docstring.
+GENERATED = '''\
+def compute_default_rope_parameters(config: {config}, device=None, **kwargs):
+    """RoPE parameters for {model}.
+
+    Args:
+        config ([`~transformers.{config}`]): the model configuration.
+    """
+    base: float = config.rope_theta  # theta, per the paper
+    partial = getattr(config, "partial_rotary_factor", 1.0)
+    dim = int(config.head_dim * partial)
+    return base, dim
+'''
+
+DROPS_THE_FACTOR = """\
+def compute_default_rope_parameters(config: GPTNeoXJapaneseConfig, device=None, **kwargs):
+    base = config.rope_theta
+    dim = int(config.head_dim)
+    return base, dim
+"""
+
+
+@pytest.fixture
+def generated(tmp_path):
+    """Five models' worth, each generated from its own modular file, and one that diverged."""
+    models = tmp_path / "src" / "models"
+    models.mkdir(parents=True)
+    for model in ("llama", "gemma", "mistral", "phi", "persimmon"):
+        config = f"{model.title()}Config"
+        for prefix in ("modeling", "modular"):
+            (models / f"{prefix}_{model}.py").write_text(
+                GENERATED.format(config=config, model=model)
+            )
+    (models / "modeling_gpt_neox_japanese.py").write_text(DROPS_THE_FACTOR)
+    return tmp_path
+
+
+def test_an_annotation_is_not_a_divergence(generated) -> None:
+    """Issue #35, the failure verbatim: grouping on the body's text made every model its
+    own shape -- 186 definitions in 172 shapes on the real corpus, with a "majority shape"
+    of two -- because `config: LlamaConfig` and `config: GPTNeoXConfig` are different text.
+    The one model that had actually diverged was invisible among 171 that had not."""
+    result = copies(str(generated), "compute_default_rope_parameters")
+
+    assert len(result.copies) == 11
+    assert [len(group) for group in result.groups.values()] == [10, 1]
+    outlier = list(result.groups.values())[1][0]
+    assert outlier.path.endswith("modeling_gpt_neox_japanese.py")
+
+
+def test_exact_keeps_the_old_grouping_for_whoever_wants_the_text(generated) -> None:
+    """It is a real question -- "are these byte-identical" -- just never the question this
+    verb is reached for. Five models, five shapes of two, plus the outlier."""
+    result = copies(str(generated), "compute_default_rope_parameters", exact=True)
+
+    assert [len(group) for group in result.groups.values()] == [2, 2, 2, 2, 2, 1]
+
+
+def test_a_docstring_and_a_comment_are_not_a_divergence(tmp_path) -> None:
+    (tmp_path / "a.py").write_text('def f(config):\n    """One."""\n    return config.x  # x\n')
+    (tmp_path / "b.py").write_text("def f(config):\n    return config.x\n")
+
+    assert len(copies(str(tmp_path), "f").groups) == 1
+    assert len(copies(str(tmp_path), "f", exact=True).groups) == 2
+
+
+def test_a_body_that_is_only_a_docstring_still_groups(tmp_path) -> None:
+    """`ast.unparse` cannot render an empty suite, and removing the docstring empties one.
+    A function whose body was only a docstring does nothing, and `pass` is how that is
+    written."""
+    (tmp_path / "a.py").write_text('def f():\n    """Nothing to do."""\n')
+    (tmp_path / "b.py").write_text("def f():\n    pass\n")
+
+    result = copies(str(tmp_path), "f")
+
+    assert len(result.groups) == 1
+    assert all(copy.normalized for copy in result.copies)
+
+
+def test_what_the_body_does_still_separates_shapes(tmp_path) -> None:
+    """The rule normalizes what is not computation. It must not normalize computation."""
+    (tmp_path / "a.py").write_text("def f(c):\n    return c.x + 1\n")
+    (tmp_path / "b.py").write_text("def f(c):\n    return c.x + 2\n")
+
+    assert len(copies(str(tmp_path), "f").groups) == 2
+
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        # A provider that declares no `extents` capability gives no end line, so the body
+        # is the signature alone -- which is not a parseable statement.
+        ("m.py", ["def f(config: Config):"]),
+        # Another language. There is no normalizer for it, and inventing one from Python's
+        # rules would be worse than admitting there is none.
+        ("m.rs", ["fn f(c: &Config) -> u32 {", "    c.x", "}"]),
+    ],
+)
+def test_a_body_with_no_normalizer_falls_back_to_its_text(path: str, body: list[str]) -> None:
+    """Falling back is right; doing it silently is not. Two shapes grouped under different
+    rules are not comparable, so :attr:`Copy.normalized` records which rule was used."""
+    assert survey._shape(path, body) is None
+
+
+def test_the_fallback_is_marked_on_the_copy(tmp_path, monkeypatch) -> None:
+    """What a caller sees when the fallback fires: the shape key *is* the text hash, and
+    the copy says it was never normalized."""
+    monkeypatch.setattr(survey, "_shape", lambda path, body: None)
+    (tmp_path / "a.py").write_text("def f(c):\n    return c.x\n")
+
+    result = copies(str(tmp_path), "f")
+
+    assert result.copies
+    assert not any(copy.normalized for copy in result.copies)
+    assert all(copy.shape_hash == copy.body_hash for copy in result.copies)
 
 
 def test_grep_answers_the_pattern_question_a_symbol_lookup_cannot(tree) -> None:
