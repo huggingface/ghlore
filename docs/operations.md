@@ -44,6 +44,19 @@ against a baseline restricted to the same window.
 extractor and re-deriving costs minutes of local CPU instead of another day of API budget.
 `poll` does both for the threads that moved, so the split is invisible in steady state.
 
+## The working clone (issue #7)
+
+`symbol`, `grep`, `copies` and `defs`/`refs --repo` read a blobless clone per repository,
+checked out at HEAD. Create it **where `serve` runs** — that is the process answering them:
+
+```bash
+export GHLORE_CLONE_ROOT=/var/lib/ghlore/clones   # default; a pod needs a volume for it
+ghlored clone --repo owner/name                   # also the refresh: re-run it on a timer
+```
+
+Without one those verbs answer 503 with a sentence naming this command, and nothing else
+degrades — the index does not depend on a checkout.
+
 ## Serve
 
 One token per consumer, each scoped to repositories — `secret:repos[:scopes]`, where

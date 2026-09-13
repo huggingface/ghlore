@@ -8,7 +8,9 @@ Two verb families, deliberately in one binary:
   (:mod:`ghlore.wire` -- the two ship together and refuse to talk across a difference)
   and, if that daemon requires one, a token in ``GHLORE_TOKEN``.
 * **code verbs** (``map``, ``defs``, ``refs``) run locally against the working tree and
-  never touch the network, a database, or a token.
+  never touch the network, a database, or a token. ``defs`` and ``refs`` take ``--repo``
+  to ask the daemon's working clone instead, and ``symbol``, ``grep`` and ``copies``
+  exist only there (issue #7).
 
 This module must not import :mod:`ghlore.store`, :mod:`ghlore.github` or
 :mod:`ghlore.api`. That is asserted by ``tests/unit/test_module_boundary.py`` and it is
@@ -190,19 +192,40 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("path", nargs="?", default=".")
     _also_after_the_verb(m, "--json")
 
-    d = sub.add_parser("defs", help="definitions in a local file (no server)")
+    d = sub.add_parser("defs", help="definitions in a file, locally or with --repo")
     d.add_argument("path")
+    d.add_argument("--repo", help="OWNER/NAME; ask the daemon's working clone instead")
     _also_after_the_verb(d, "--json")
 
     r = sub.add_parser(
         "refs",
         help=(
-            "every occurrence of a symbol in the local checkout, by kind: call, "
-            "definition, attribute, name (no server)"
+            "every occurrence of a symbol, by kind: call, definition, attribute, name. "
+            "Local unless --repo"
         ),
     )
     r.add_argument("symbol")
+    r.add_argument("--repo", help="OWNER/NAME; ask the daemon's working clone instead")
     _also_after_the_verb(r, "--json")
+
+    sym = sub.add_parser("symbol", help="the source of one definition, from the daemon's clone")
+    sym.add_argument("qualname")
+    sym.add_argument("--repo", help="OWNER/NAME; needed when the token can see several")
+    _also_after_the_verb(sym, "--json")
+
+    g = sub.add_parser("grep", help="a regular expression over the daemon's working clone")
+    g.add_argument("pattern")
+    g.add_argument("--repo", help="OWNER/NAME; needed when the token can see several")
+    g.add_argument("--path", help="glob the paths must match, e.g. 'src/**/modeling_*.py'")
+    _also_after_the_verb(g, "--json")
+
+    c = sub.add_parser(
+        "copies",
+        help="every definition of a symbol, grouped by whether the bodies agree",
+    )
+    c.add_argument("symbol")
+    c.add_argument("--repo", help="OWNER/NAME; needed when the token can see several")
+    _also_after_the_verb(c, "--json")
 
     return p
 
@@ -217,6 +240,9 @@ def main(argv: list[str] | None = None) -> int:
         "map": _map,
         "defs": _defs,
         "refs": _refs,
+        "symbol": _symbol,
+        "grep": _grep,
+        "copies": _copies,
     }.get(args.verb)
     if handler is None:
         raise SystemExit(
@@ -382,9 +408,20 @@ def _map(args: argparse.Namespace) -> int:
     return 0
 
 
+def _code_params(args: argparse.Namespace, **extra: Any) -> dict[str, str]:
+    params = {key: value for key, value in extra.items() if value}
+    if args.repo:
+        params["repo"] = args.repo
+    return params
+
+
 def _defs(args: argparse.Namespace) -> int:
     from ghlore.code.defs import definitions
     from ghlore.code.walk import read
+
+    if args.repo:
+        payload = _call(args, "GET", "/api/v1/code/defs", params=_code_params(args, path=args.path))
+        return _emit(args, payload, lambda: _defs_text(payload["definitions"]))
 
     source = read(args.path)
     if source is None:
@@ -393,18 +430,27 @@ def _defs(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps([vars(d) for d in found], indent=2))
         return 0
-    for definition in found:
-        extent = (
-            f"{definition.start_line}-{definition.end_line}"
-            if definition.end_line
-            else str(definition.start_line)
-        )
-        print(f"{extent:12} {definition.kind:9} {definition.qualname}")
+    print(_defs_text([vars(d) for d in found]))
     return 0
+
+
+def _defs_text(found: list[dict[str, Any]]) -> str:
+    lines = []
+    for definition in found:
+        end = definition.get("end_line")
+        extent = f"{definition['start_line']}-{end}" if end else str(definition["start_line"])
+        lines.append(f"{extent:12} {definition['kind']:9} {definition['qualname']}")
+    return "\n".join(lines)
 
 
 def _refs(args: argparse.Namespace) -> int:
     from ghlore.code.refs import references
+
+    if args.repo:
+        payload = _call(
+            args, "GET", "/api/v1/code/refs", params=_code_params(args, symbol=args.symbol)
+        )
+        return _emit(args, payload, lambda: _refs_text(payload))
 
     result = references(".", args.symbol)
     if args.json:
@@ -435,6 +481,77 @@ def _refs(args: argparse.Namespace) -> int:
             "claims were not searched)"
         )
     return 0
+
+
+def _refs_text(payload: dict[str, Any]) -> str:
+    hits = payload.get("hits") or []
+    lines = [f"{hit['path']}:{hit['line']}  {hit['kind']}" for hit in hits]
+    counts = ", ".join(f"{count} {kind}" for kind, count in (payload.get("by_kind") or {}).items())
+    lines.append(
+        f"-- {len(hits)} references at {payload.get('head', '')[:8]}"
+        + (f" ({counts})" if counts else "")
+    )
+    return "\n".join(lines)
+
+
+def _symbol(args: argparse.Namespace) -> int:
+    """The 18 lines that matter, without a clone (#7 item 2)."""
+    payload = _call(
+        args, "GET", "/api/v1/code/symbol", params=_code_params(args, qualname=args.qualname)
+    )
+    return _emit(args, payload, lambda: _symbol_text(payload))
+
+
+def _symbol_text(payload: dict[str, Any]) -> str:
+    head = f"{payload['path']}:{payload['start_line']}  {payload['kind']}  {payload['qualname']}"
+    total = payload.get("definitions_total", 1)
+    if total > 1:
+        # Serving one of many as *the* body is a wrong answer a caller cannot see.
+        head += f"\n({total} definitions of this name; `ghlore copies` groups them)"
+    return f"{head}\n{payload['body']}"
+
+
+def _grep(args: argparse.Namespace) -> int:
+    payload = _call(
+        args,
+        "GET",
+        "/api/v1/code/grep",
+        params=_code_params(args, pattern=args.pattern, path=args.path),
+    )
+    return _emit(args, payload, lambda: _grep_text(payload))
+
+
+def _grep_text(payload: dict[str, Any]) -> str:
+    hits = payload.get("hits") or []
+    lines = [f"{hit['path']}:{hit['line']}  {hit['text']}" for hit in hits]
+    lines.append(f"-- {len(hits)} in {payload.get('files_searched', 0)} files")
+    if payload.get("truncated"):
+        lines.append("   (capped: narrow it with --path)")
+    return "\n".join(lines)
+
+
+def _copies(args: argparse.Namespace) -> int:
+    """Which copies diverge -- the question a repository that duplicates code on purpose
+    actually asks (#7 item 4)."""
+    payload = _call(
+        args, "GET", "/api/v1/code/copies", params=_code_params(args, symbol=args.symbol)
+    )
+    return _emit(args, payload, lambda: _copies_text(payload))
+
+
+def _copies_text(payload: dict[str, Any]) -> str:
+    groups = payload.get("groups") or []
+    lines = [
+        f"{payload.get('total', 0)} definitions of {payload.get('symbol')} "
+        f"in {len(groups)} shape{'' if len(groups) == 1 else 's'}"
+    ]
+    for index, group in enumerate(groups, start=1):
+        note = " (the majority shape)" if index == 1 and len(groups) > 1 else ""
+        lines.append(f"\n-- shape {index}: {group['count']} copies{note}")
+        lines += [f"   {copy['path']}:{copy['start_line']}" for copy in group["copies"]]
+    if payload.get("truncated"):
+        lines.append("\n(capped.)")
+    return "\n".join(lines)
 
 
 # -- transport -------------------------------------------------------------

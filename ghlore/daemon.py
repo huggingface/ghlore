@@ -105,6 +105,14 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--interval", default="5m", help="30s, 5m, 2h (default: 5m)")
     q.add_argument("--once", action="store_true", help="one pass, then exit")
 
+    q = sub.add_parser(
+        "clone",
+        help="create or refresh the working clone the code verbs read (issue #7)",
+    )
+    q.add_argument("--repo", required=True, metavar="OWNER/NAME")
+    q.add_argument("--root", help="where clones live (default: $GHLORE_CLONE_ROOT)")
+    q.add_argument("--url", help="clone URL (default: https://github.com/OWNER/NAME.git)")
+
     q = sub.add_parser("serve", help="HTTP JSON API + web search UI")
     q.add_argument("--port", type=int, default=8080)
     q.add_argument(
@@ -217,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
         "mine": _mine,
         "bench": _bench,
         "judge": _judge,
+        "clone": _clone,
         "serve": _serve,
         "status": _status,
     }[args.verb]
@@ -602,6 +611,20 @@ def _mine(args: argparse.Namespace) -> int:
     print(f"{sum(1 for ex in found if ex.id not in known)} new, {len(grown.examples)} in {out}")
     for kind, counts in grown.counts().items():
         print(f"  {kind:11} {counts['examples']:4} examples, {counts['judged']:4} judged")
+    return 0
+
+
+def _clone(args: argparse.Namespace) -> int:
+    """The clone the code verbs read. Run it where `serve` runs -- that process is the one
+    that answers them (issue #7)."""
+    from ghlore.code.clone import CloneUnavailable, WorkingClones
+
+    try:
+        info = WorkingClones(args.root).ensure(args.repo, url=args.url)
+    except CloneUnavailable as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(f"{info.repo}  {info.path}\nHEAD {info.head[:12]}  committed {info.fetched_at}")
     return 0
 
 

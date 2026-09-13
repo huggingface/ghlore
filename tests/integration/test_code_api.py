@@ -1,0 +1,143 @@
+"""The code lens over HTTP (section 1, issue #7).
+
+Scoped like every other endpoint -- a token cannot read a tree it cannot read threads from
+-- and degrading rather than failing when a repository has no clone, which is build plan
+14.4(b): the conversation index must never depend on a checkout.
+"""
+
+from __future__ import annotations
+
+import subprocess
+
+import pytest
+from fake_github import FakeGitHub
+from fastapi.testclient import TestClient
+from sqlalchemy import Engine
+
+from ghlore import __version__
+from ghlore.api.server import build_app
+from ghlore.api.tokens import Authenticator, Token
+from ghlore.ingest.index_thread import index_thread
+from ghlore.wire import CLIENT_HEADER
+
+REPO = "owner/name"
+
+BODY = """\
+def compute_default_rope_parameters(config):
+    dim = int(config.head_dim * config.partial_rotary_factor)
+    return dim
+"""
+
+DIVERGED = BODY.replace(" * config.partial_rotary_factor", "")
+
+
+@pytest.fixture
+def fake() -> FakeGitHub:
+    return FakeGitHub(REPO)
+
+
+@pytest.fixture
+def clone_root(tmp_path):
+    """A real git repository, because the endpoints report HEAD."""
+    root = tmp_path / "clones"
+    tree = root / REPO.replace("/", "__")
+    (tree / "src").mkdir(parents=True)
+    (tree / "src" / "modeling_llama.py").write_text(BODY)
+    (tree / "src" / "modeling_gpt_neox_japanese.py").write_text(DIVERGED)
+    for argv in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.email", "t@example.com"],
+        ["git", "config", "user.name", "t"],
+        ["git", "add", "-A"],
+        ["git", "commit", "-qm", "initial"],
+    ):
+        subprocess.run(argv, cwd=tree, check=True, capture_output=True)
+    return str(root)
+
+
+@pytest.fixture
+def client(engine: Engine, fake: FakeGitHub, clone_root) -> TestClient:
+    with fake.client() as github:
+        index_thread(engine, github, REPO, 1) if fake.threads else None
+    return TestClient(
+        build_app(engine, clone_root=clone_root), headers={CLIENT_HEADER: __version__}
+    )
+
+
+@pytest.fixture(autouse=True)
+def indexed(engine: Engine, fake: FakeGitHub):
+    """`_one_repo` resolves against what is indexed, so the repo has to exist as history."""
+    fake.add_pr(1, title="the refactor")
+    with fake.client() as github:
+        index_thread(engine, github, REPO, 1)
+
+
+def test_copies_groups_the_definitions_so_the_outlier_is_the_answer(client) -> None:
+    response = client.get(
+        "/api/v1/code/copies", params={"symbol": "compute_default_rope_parameters"}
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["total"] == 2
+    assert [group["count"] for group in payload["groups"]] == [1, 1]
+    assert payload["head"]
+
+
+def test_grep_answers_the_pattern_question(client) -> None:
+    response = client.get(
+        "/api/v1/code/grep",
+        params={"pattern": "partial_rotary_factor", "path": "src/*.py"},
+    )
+
+    payload = response.json()
+    assert [hit["path"] for hit in payload["hits"]] == ["src/modeling_llama.py"]
+    assert payload["files_searched"] == 2
+
+
+def test_symbol_returns_a_body_and_says_how_many_there_are(client) -> None:
+    """Two copies here, 38 in `transformers`: serving one as *the* body without the count
+    is a wrong answer the caller cannot see."""
+    response = client.get(
+        "/api/v1/code/symbol", params={"qualname": "compute_default_rope_parameters"}
+    )
+
+    payload = response.json()
+    assert payload["definitions_total"] == 2
+    assert payload["path"].startswith("src/")
+    assert "def compute_default_rope_parameters" in payload["body"]
+
+
+def test_defs_and_refs_answer_from_the_clone(client) -> None:
+    defs = client.get("/api/v1/code/defs", params={"path": "src/modeling_llama.py"}).json()
+    assert [d["qualname"] for d in defs["definitions"]] == ["compute_default_rope_parameters"]
+
+    refs = client.get(
+        "/api/v1/code/refs", params={"symbol": "compute_default_rope_parameters"}
+    ).json()
+    assert len(refs["hits"]) == 2
+
+
+def test_a_repository_with_no_clone_says_so_rather_than_failing(engine: Engine, tmp_path) -> None:
+    """14.4(b): the lens degrades, the index does not depend on it."""
+    client = TestClient(
+        build_app(engine, clone_root=str(tmp_path / "empty")), headers={CLIENT_HEADER: __version__}
+    )
+
+    response = client.get("/api/v1/code/grep", params={"pattern": "x"})
+
+    assert response.status_code == 503
+    assert "no working clone" in response.json()["detail"]
+    assert "ghlored clone" in response.json()["detail"]
+
+
+def test_a_token_cannot_read_a_tree_it_cannot_read_threads_from(engine: Engine, clone_root) -> None:
+    auth = Authenticator(tokens=(Token(name="agent", secret="tok", repos=("other/repo",)),))
+    client = TestClient(
+        build_app(engine, auth=auth, clone_root=clone_root),
+        headers={CLIENT_HEADER: __version__, "authorization": "Bearer tok"},
+    )
+
+    response = client.get("/api/v1/code/grep", params={"pattern": "x", "repo": REPO})
+
+    assert response.status_code == 404

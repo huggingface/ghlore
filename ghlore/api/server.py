@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
@@ -41,6 +42,11 @@ from ghlore.api.schemas import (
     thread_json,
 )
 from ghlore.api.tokens import LABEL_SCOPE, Authenticator, AuthError, RateLimited, Token
+from ghlore.code.clone import CloneUnavailable, WorkingClones
+from ghlore.code.defs import definitions
+from ghlore.code.refs import references
+from ghlore.code.survey import copies, grep, symbol_body
+from ghlore.code.walk import read
 from ghlore.render import render_inflight, render_search, render_thread
 from ghlore.search import QueryError, SearchQuery, expand, open_backend, search_expanded
 from ghlore.search.queries import HUMAN_TRUST, admissible_trust
@@ -68,11 +74,13 @@ class Deps:
         *,
         auth: Authenticator | None = None,
         labels_path: Path | None = None,
+        clone_root: str | None = None,
     ) -> None:
         self.engine = engine
         self.backend = open_backend(engine)
         self.auth = auth or Authenticator()
         self.labels_path = labels_path
+        self.clones = WorkingClones(clone_root)
         self.counters: Counter[str] = Counter()
 
     def indexed_repos(self) -> tuple[str, ...]:
@@ -131,8 +139,9 @@ def build_app(
     *,
     auth: Authenticator | None = None,
     labels_path: Path | None = None,
+    clone_root: str | None = None,
 ) -> FastAPI:
-    deps = Deps(engine, auth=auth, labels_path=labels_path)
+    deps = Deps(engine, auth=auth, labels_path=labels_path, clone_root=clone_root)
     app = FastAPI(title="ghlore", version=__version__, docs_url="/api/docs")
     app.state.deps = deps
 
@@ -298,6 +307,117 @@ def build_app(
             render=(lambda scrubbed: render_inflight(scrubbed, presentation=presentation))
             if render
             else None,
+        )
+
+    # -- the code lens (section 1, issue #7) --------------------------------
+    #
+    # Scoped exactly like the history verbs: `_one_repo` first, so a token cannot read a
+    # tree it cannot read threads from. A repository with no clone is a 503 with a sentence
+    # -- the index does not depend on a checkout (build plan 14.4b).
+
+    def _clone_root(token: Caller, repo: str | None) -> tuple[str, str]:
+        name = _one_repo(token, repo)
+        try:
+            return name, deps.clones.require(name)
+        except CloneUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from None
+
+    @app.get("/api/v1/code/defs")
+    def code_defs(token: Caller, path: str, repo: str | None = None) -> Response:
+        name, root = _clone_root(token, repo)
+        source = read(str(Path(root) / path))
+        if source is None:
+            raise HTTPException(status_code=404, detail=f"{path} is not in {name} at HEAD")
+        found = definitions(path, source)
+        return _json(
+            {
+                "repo": name,
+                "path": path,
+                "head": deps.clones.info(name).head,
+                "definitions": [vars(d) for d in found],
+            }
+        )
+
+    @app.get("/api/v1/code/refs")
+    def code_refs(token: Caller, symbol: str, repo: str | None = None) -> Response:
+        name, root = _clone_root(token, repo)
+        result = references(root, symbol)
+        return _json(
+            {
+                "repo": name,
+                "symbol": symbol,
+                "head": deps.clones.info(name).head,
+                "hits": [vars(hit) for hit in result.hits],
+                "by_kind": dict(result.by_kind),
+                "searched": result.searched,
+                # Section 9 rule 2: a language with no reference tier is named, never
+                # answered with an empty list a caller reads as "nothing calls this".
+                "unsupported": list(result.unsupported),
+            }
+        )
+
+    @app.get("/api/v1/code/symbol")
+    def code_symbol(token: Caller, qualname: str, repo: str | None = None) -> Response:
+        name, root = _clone_root(token, repo)
+        found = symbol_body(root, qualname)
+        if found is None:
+            raise HTTPException(status_code=404, detail=f"{qualname} is not defined in {name}")
+        return _json(
+            {
+                "repo": name,
+                "head": deps.clones.info(name).head,
+                "path": found.path,
+                "qualname": found.definition.qualname,
+                "kind": found.definition.kind,
+                "start_line": found.definition.start_line,
+                "end_line": found.definition.end_line,
+                "body": found.body,
+                "definitions_total": found.total,
+            }
+        )
+
+    @app.get("/api/v1/code/grep")
+    def code_grep(
+        token: Caller, pattern: str, repo: str | None = None, path: str | None = None
+    ) -> Response:
+        name, root = _clone_root(token, repo)
+        try:
+            result = grep(root, pattern, path_glob=path)
+        except re.error as exc:
+            raise HTTPException(status_code=400, detail=f"bad pattern: {exc}") from None
+        return _json(
+            {
+                "repo": name,
+                "head": deps.clones.info(name).head,
+                "pattern": pattern,
+                "path_glob": path,
+                "hits": [vars(hit) for hit in result.hits],
+                "files_searched": result.files_searched,
+                "truncated": result.truncated,
+            }
+        )
+
+    @app.get("/api/v1/code/copies")
+    def code_copies(token: Caller, symbol: str, repo: str | None = None) -> Response:
+        """Every definition of ``symbol``, grouped by whether the bodies agree (#7 item 4)."""
+        name, root = _clone_root(token, repo)
+        result = copies(root, symbol)
+        return _json(
+            {
+                "repo": name,
+                "head": deps.clones.info(name).head,
+                "symbol": symbol,
+                "total": len(result.copies),
+                "truncated": result.truncated,
+                "groups": [
+                    {
+                        "body_hash": body_hash,
+                        "count": len(group),
+                        "copies": [vars(c) for c in group],
+                    }
+                    for body_hash, group in result.groups.items()
+                ],
+            }
         )
 
     @app.post("/api/v1/precedent")

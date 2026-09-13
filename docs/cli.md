@@ -284,6 +284,46 @@ project.
 
 ---
 
+## The same questions, asked of the server (#7)
+
+`defs` and `refs` take `--repo`, and `symbol`, `grep` and `copies` only exist there: they
+read the daemon's **working clone**, a blobless clone per indexed repository checked out at
+HEAD. That is the half of a diagnosis that used to end in `git clone --filter=blob:none
+--depth 200` and a throwaway script.
+
+```
+$ ghlore copies compute_default_rope_parameters --repo huggingface/transformers
+38 definitions of compute_default_rope_parameters in 2 shapes
+
+-- shape 1: 37 copies (the majority shape)
+   src/transformers/models/llama/modeling_llama.py:88
+   …
+-- shape 2: 1 copies
+   src/transformers/models/gpt_neox_japanese/modeling_gpt_neox_japanese.py:90
+
+$ ghlore grep 'partial_rotary_factor' --repo huggingface/transformers \
+    --path 'src/transformers/models/**/modeling_*.py'
+$ ghlore symbol GPTNeoXJapaneseRotaryEmbedding.forward --repo huggingface/transformers
+```
+
+`copies` groups by the body rather than listing definitions, because in a repository that
+duplicates model code on purpose the question is never *where is it* but *which copies
+diverge* — the shape of `huggingface/transformers#48630`. Indentation is normalized, so a
+function lifted into a class groups with its original.
+
+`symbol` prints how many definitions of that name exist. Serving the first of 38 as *the*
+body is a wrong answer a caller cannot see.
+
+**HEAD, not the tree as it was.** These verbs answer "what does this code look like now",
+which is what an audit asks. The lens that reads a comment's tree at the time it was
+written is a different depth and a separate decision.
+
+**A repository with no clone answers 503 with a sentence**, and the history verbs are
+unaffected: the conversation index never depends on a checkout. `ghlored clone --repo
+OWNER/NAME`, run where `ghlored serve` runs, creates one.
+
+---
+
 ## Empty results that are not faults
 
 **No results is always exit 0 with an empty result.** So when something comes back empty,

@@ -64,6 +64,23 @@ def source_files(root: str) -> Iterator[str]:
                 yield path
 
 
+def all_files(root: str) -> Iterator[str]:
+    """Every file under ``root`` worth reading, claimed by a provider or not.
+
+    :func:`source_files` is the *parsing* set, so it depends on which grammars are
+    installed. A text search must not: "which files have this shape" is asked of YAML and
+    docs too, and an answer that silently omits them is worse than a slower one.
+    """
+    if os.path.isfile(root):
+        yield root
+        return
+    for directory, subdirs, names in os.walk(root):
+        subdirs[:] = sorted(d for d in subdirs if d not in SKIP_DIRS and not d.startswith("."))
+        for name in sorted(names):
+            if not name.startswith("."):
+                yield os.path.join(directory, name)
+
+
 def read(path: str) -> bytes | None:
     """A file's bytes, or ``None`` when it is too big or unreadable.
 
