@@ -1,9 +1,8 @@
 # ghlore — the daemon image. `ghlored` and `ghlore`, nothing else.
 #
-# It installs `ghlore[postgres]` and NOT `[python]`: the code lens (build-plan
-# section 1) runs against a working tree in the *client*, and the daemon's half of
-# it needs milestone 4's working clone, which does not exist. Adding tree-sitter
-# and a grammar now would ship a parser nothing calls.
+# It installs `ghlore[postgres,python]`: the daemon's half of the code lens landed, so
+# without a parser `symbol`, `copies` and `defs`/`refs --repo` answer `MissingParser`.
+# `git` is what `ghlored clone` and `why`'s blame shell out to.
 #
 # `pg_isready` comes from postgresql-client and is used by the migrate hook to
 # wait for the database rather than fail the release on a first-install race.
@@ -14,13 +13,13 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends postgresql-client \
+ && apt-get install -y --no-install-recommends git postgresql-client \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY ghlore ./ghlore
-RUN pip install --no-cache-dir '.[postgres]'
+RUN pip install --no-cache-dir '.[postgres,python]'
 
 # Not root. The daemon reads a token and writes one JSONL file; it has no reason
 # to be able to do anything else.

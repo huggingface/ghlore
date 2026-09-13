@@ -29,6 +29,11 @@ data:
   # human-judged ground truth the thing only real use can produce.
   GHLORE_LABELS_PATH: {{ .Values.labels.path | quote }}
   {{- end }}
+  {{- if .Values.clones.enabled }}
+  # On the ConfigMap, not the serve container: an `exec`'d `ghlored clone` inherits it
+  # and needs no `--root`. The poll pods read it and never clone.
+  GHLORE_CLONE_ROOT: {{ .Values.clones.path | quote }}
+  {{- end }}
   {{- range $key, $value := .Values.extraEnv }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}

@@ -16,6 +16,12 @@ metadata:
   labels: {{ include "labels.standard" . | nindent 4 }}
 spec:
   replicas: {{ .Values.serve.replicas }}
+  {{- if or .Values.labels.enabled .Values.clones.enabled }}
+  # The PVCs are ReadWriteOnce and a rolling update starts the replacement first, so it
+  # would sit Pending on a volume still attached to the old pod's node.
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       app: {{ include "app.name" . }}
@@ -32,6 +38,14 @@ spec:
         # them back in the template, which is what makes helm roll the pod.
         checksum/config: {{ include (print $.Template.BasePath "/config.yaml") . | sha256sum }}
     spec:
+      {{- if or .Values.labels.enabled .Values.clones.enabled }}
+      # The image runs as uid 10001 and a CSI volume arrives root-owned, so without this
+      # `ghlored clone` cannot write -- nor can section 8's label append.
+      securityContext:
+        fsGroup: 10001
+        # Or the kubelet re-chowns every file of a large clone on each start.
+        fsGroupChangePolicy: OnRootMismatch
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets: {{ toYaml . | nindent 8 }}
       {{- end }}
@@ -109,10 +123,17 @@ spec:
             - name: GHLORE_API_TOKENS
               value: ""
             {{- end }}
-          {{- if .Values.labels.enabled }}
+          {{- if or .Values.labels.enabled .Values.clones.enabled }}
+          # labels first: the clone root is inside its mount, and mounts apply in order.
           volumeMounts:
+            {{- if .Values.labels.enabled }}
             - name: labels
               mountPath: {{ dir .Values.labels.path }}
+            {{- end }}
+            {{- if .Values.clones.enabled }}
+            - name: clones
+              mountPath: {{ .Values.clones.path }}
+            {{- end }}
           {{- end }}
           # `/metrics`, not `/api/v1/status`. Status requires a bearer token whenever
           # tokens are configured (section 7 scopes every endpoint that returns
@@ -135,8 +156,9 @@ spec:
             initialDelaySeconds: 20
             periodSeconds: 30
           resources: {{ toYaml .Values.serve.resources | nindent 12 }}
-      {{- if .Values.labels.enabled }}
+      {{- if or .Values.labels.enabled .Values.clones.enabled }}
       volumes:
+        {{- if .Values.labels.enabled }}
         # Section 10's evaluation set has to land somewhere, and section 15 says the
         # thing only real use can produce is human-judged ground truth. A byproduct
         # of use beats a chore nobody schedules -- but only if the file survives a
@@ -144,6 +166,13 @@ spec:
         - name: labels
           persistentVolumeClaim:
             claimName: {{ include "name" . }}-labels
+        {{- end }}
+        {{- if .Values.clones.enabled }}
+        # A PVC, not an emptyDir: re-cloning transformers on each restart is minutes of 503s.
+        - name: clones
+          persistentVolumeClaim:
+            claimName: {{ include "name" . }}-clones
+        {{- end }}
       {{- end }}
 ---
 apiVersion: v1
@@ -161,6 +190,25 @@ spec:
     - name: http
       port: 80
       targetPort: http
+{{- if .Values.clones.enabled }}
+---
+# ReadWriteOnce, and the serve pod holds it -- which is why `ghlored clone` is an
+# `exec` into that pod and not a Job, and why `serve.replicas` stays 1.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "name" . }}-clones
+  namespace: {{ .Release.Namespace }}
+  labels: {{ include "labels.standard" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if .Values.clones.storageClass }}
+  storageClassName: {{ .Values.clones.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.clones.size | quote }}
+{{- end }}
 {{- if .Values.labels.enabled }}
 ---
 apiVersion: v1

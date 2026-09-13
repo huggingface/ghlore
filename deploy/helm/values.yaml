@@ -136,6 +136,19 @@ labels:
   storageClass: ""
   size: 1Gi
 
+# Issue #7's working clone, one blobless checkout per repository, read by `symbol`,
+# `grep`, `copies` and `defs`/`refs --repo`. `ghlored clone --repo owner/name`, exec'd
+# into the serve pod, is both the create and the refresh; until it runs those verbs
+# answer 503 naming it and nothing else notices.
+clones:
+  enabled: true
+  # `ghlore/code/clone.py` defaults to the same path. Setting it here is what makes the
+  # pod agree with the code rather than happen to match it.
+  path: /var/lib/ghlore/clones
+  storageClass: ""
+  # transformers is nearly all of it; 10Gi leaves room for a fourth repository.
+  size: 10Gi
+
 migrate:
   backoffLimit: 3
   resources:
