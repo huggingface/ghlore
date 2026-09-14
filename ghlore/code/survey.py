@@ -186,11 +186,27 @@ def symbol_body(root: str, qualname: str) -> SymbolBody | None:
 
 
 def _definitions_named(root: str, name: str) -> Iterator[tuple[str, Definition, list[str]]]:
+    """Every definition of ``name`` in the tree, parsing only the files that can hold one.
+
+    The filter is the latency of `symbol` and `copies` (issue #45): without it both parse
+    every claimed file to answer about one name -- 4,882 files on `transformers`, 6.5 s of
+    the 7 s, against 0.46 s to read them all. The parse is the cost, not the tree.
+
+    A provider reads a name out of the source, so a file without the identifier in its bytes
+    cannot define it. Still a superset: a file that only mentions it is parsed and rejected
+    below. Matched on the **leaf** -- ``Foo.bar`` is spelled across two lines, so the dotted
+    form is in no file -- and only when that is ASCII, since a `coding:` declaration means
+    the bytes need not be UTF-8.
+    """
+    leaf = name.rsplit(".", 1)[-1]
+    needle = leaf.encode() if leaf.isascii() else None
     for path in source_files(root):
         if not claimed(path):
             continue
         raw = read(path)
         if raw is None:
+            continue
+        if needle is not None and needle not in raw:
             continue
         source = raw.decode("utf-8", "replace").splitlines()
         for definition in definitions(path, raw):

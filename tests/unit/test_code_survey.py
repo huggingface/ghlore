@@ -6,6 +6,8 @@ purpose asks "which of the 38 copies diverge", and that is a grouping rather tha
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from ghlore.code import survey
@@ -236,3 +238,76 @@ def test_two_definitions_of_a_name_in_one_file(tmp_path) -> None:
     # The earlier of the two, because selection has to be deterministic to be reportable.
     assert found.definition.qualname == "A.compute_default_rope_parameters"
     assert "return 1" in found.body
+
+
+# -- the latency of both verbs is which files get parsed (issue #45) -------------------
+
+
+def _parse_counter(monkeypatch) -> list[str]:
+    """Records the files handed to the parser, which is what the fix is about."""
+    parsed: list[str] = []
+    real = survey.definitions
+
+    def counted(path: str, source: bytes):
+        parsed.append(os.path.basename(path))
+        return real(path, source)
+
+    monkeypatch.setattr(survey, "definitions", counted)
+    return parsed
+
+
+def test_only_files_that_can_hold_the_name_are_parsed(tmp_path, monkeypatch) -> None:
+    """Issue #45: 20 s warm on `transformers` against a 30 s client timeout, because all
+    4,882 claimed files were parsed to answer about one name."""
+    (tmp_path / "has_it.py").write_text(CANONICAL)
+    (tmp_path / "mentions_it.py").write_text("# compute_default_rope_parameters is fine\n")
+    for index in range(20):
+        (tmp_path / f"unrelated_{index}.py").write_text("def something_else(c):\n    return c\n")
+    parsed = _parse_counter(monkeypatch)
+
+    found = symbol_body(str(tmp_path), "compute_default_rope_parameters")
+
+    assert found is not None
+    assert found.path == "has_it.py"
+    # A file that merely mentions the name is still parsed and then rejected -- the filter
+    # is a superset of the answer, never a second matching rule.
+    assert sorted(parsed) == ["has_it.py", "mentions_it.py"]
+
+
+def test_the_filter_matches_the_leaf_so_a_qualname_still_resolves(tmp_path, monkeypatch) -> None:
+    """The dotted form is in no file, so filtering on it would 404 every qualname."""
+    (tmp_path / "m.py").write_text("class Model:\n    def forward(self, x):\n        return x\n")
+    parsed = _parse_counter(monkeypatch)
+
+    found = symbol_body(str(tmp_path), "Model.forward")
+
+    assert found is not None
+    assert found.definition.qualname == "Model.forward"
+    assert parsed == ["m.py"]
+
+
+def test_a_non_ascii_name_drops_the_filter_rather_than_the_match(tmp_path, monkeypatch) -> None:
+    """A `coding:` declaration means the bytes need not be UTF-8, so unsure parses
+    everything rather than missing the match."""
+    (tmp_path / "m.py").write_text("def café(c):\n    return c\n", encoding="utf-8")
+    (tmp_path / "other.py").write_text("def plain(c):\n    return c\n")
+    parsed = _parse_counter(monkeypatch)
+
+    found = symbol_body(str(tmp_path), "café")
+
+    assert found is not None
+    assert sorted(parsed) == ["m.py", "other.py"]
+
+
+def test_copies_is_filtered_too_since_it_shares_the_walk(tree, monkeypatch) -> None:
+    """Same cost for the same reason (#43); one walk serves both verbs."""
+    for index in range(20):
+        (tree / "src" / "models" / f"other_{index}.py").write_text(
+            "def elsewhere(c):\n    return c\n"
+        )
+    parsed = _parse_counter(monkeypatch)
+
+    result = copies(str(tree), "compute_default_rope_parameters")
+
+    assert len(result.copies) == 4
+    assert len(parsed) == 4
