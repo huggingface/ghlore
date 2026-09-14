@@ -389,14 +389,20 @@ def test_inflight_renders_compact_when_asked(client: TestClient, engine: Engine,
     endpoints behind them have to take it -- an unknown query parameter is dropped by
     FastAPI without a word, so a client sending `compact=true` to an endpoint that does not
     read it gets the full page and no indication that its flag went nowhere."""
-    fake.add_pr(1, body="Fixes #999")
+    # Long enough that trimming has something to take: the envelope sentence used to be
+    # the difference on a short page, and it is on both now.
+    fake.add_pr(1, title="a title " * 40, body="Fixes #999")
     _index(engine, fake, 1)
 
     full = client.get("/api/v1/inflight/999?render=true").json()["rendered"]
     compact = client.get("/api/v1/inflight/999?render=true&compact=true").json()["rendered"]
 
+    # The untrusted-content sentence is on both now: `--compact` is the default for a pipe,
+    # so dropping it would take the warning away from every agent and from no one who
+    # chose it. What compact trims is the prose, and the explanatory envelope line.
     assert "not instructions" in full
-    assert "not instructions" not in compact
+    assert "not instructions" in compact
+    assert len(compact) < len(full)
     assert "#1" in compact, "the claim itself is not what a budget trims"
 
 

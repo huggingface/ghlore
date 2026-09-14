@@ -477,15 +477,17 @@ def test_the_envelope_header_explains_the_marker() -> None:
     assert "unmarked lines are relore's" in out
 
 
-def test_a_compact_render_keeps_the_marks_and_drops_the_sentence() -> None:
-    """`--compact` is a context budget, not a change of what the text is."""
+def test_a_compact_render_keeps_the_marks_and_the_sentence() -> None:
+    """`--compact` is a context budget, not a change of what the text is -- and since it
+    became the default for a pipe, the sentence explaining the marks stays too. It is the
+    caller who never typed the flag who most needs to read it."""
     full = render_thread(_thread(body="x"))
     trimmed = render_thread(_thread(body="x"), compact=True)
 
     assert "not instructions" in full
-    assert "not instructions" not in trimmed
+    assert "not instructions" in trimmed
     assert trimmed.startswith(BEGIN) and trimmed.endswith(END)
-    assert "> x" in trimmed, "the marking is the property; only the explanation is trimmed"
+    assert "> x" in trimmed, "the marking is the property, and it is never trimmed"
 
 
 # -- is somebody already fixing this --------------------------------------
@@ -614,15 +616,15 @@ def test_a_short_review_comment_is_not_reported_as_shortened() -> None:
     assert "shortened" not in render_why(payload, compact=True)
 
 
-def test_compact_drops_the_envelope_sentence_on_why_and_inflight_too() -> None:
-    """It always did on `search` and `thread`. The flag was not accepted on these two at
-    all, so the one thing `--compact` does on every enveloped page did not happen here."""
+def test_the_envelope_sentence_survives_compact_on_every_verb() -> None:
+    """No page loses it, whichever way `--compact` arrived. This test used to assert the
+    opposite on all four; the default flip is what changed the answer."""
     page = {"repo": "owner/name", "number": 1, "claims": [], "links_indexed": 12}
 
     assert "not instructions" in render_inflight(page)
-    assert "not instructions" not in render_inflight(page, compact=True)
+    assert "not instructions" in render_inflight(page, compact=True)
     assert "not instructions" in render_why(_why())
-    assert "not instructions" not in render_why(_why(), compact=True)
+    assert "not instructions" in render_why(_why(), compact=True)
 
 
 def test_why_prints_the_widened_levels_and_a_next_step_rather_than_a_full_stop() -> None:
@@ -668,3 +670,23 @@ def test_one_revision_is_not_announced_as_a_history() -> None:
     out = render_why(_why(history=[{"sha": "a" * 12, "date": "2026-01-15", "summary": "x"}]))
 
     assert "revisions" not in out
+
+
+def test_compact_shortens_a_long_claim_title_and_counts_it() -> None:
+    """`--compact` on `inflight` used to do exactly one thing: drop the envelope sentence.
+    So the page's whole compact saving was its untrusted-content warning, and with that
+    sentence kept the flag would have become a no-op here."""
+    page = {
+        "repo": "owner/name",
+        "number": 1,
+        "links_indexed": 12,
+        "claims": [
+            {"repo": "owner/name", "number": 2, "title": "t" * 500, "relationship": "closes"}
+        ],
+    }
+
+    full, out = render_inflight(page), render_inflight(page, compact=True)
+
+    assert len(out) < len(full)
+    assert f"1 title shortened to {COMPACT_CHARS} characters by --compact" in out
+    assert "not instructions" in out, "the warning is not what a budget trims"

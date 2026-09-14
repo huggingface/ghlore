@@ -610,6 +610,7 @@ def render_inflight(
             )
         return envelope("\n".join(lines), compact=compact)
 
+    shortened = 0
     claim_word = "thread claims" if total == 1 else "threads claim"
     lines = [f"{total} {claim_word} to close {subject}", ""]
     for index, claim in enumerate(claims, start=1):
@@ -622,12 +623,26 @@ def render_inflight(
             head += f"  @{claim['author']}"
         lines.append(head)
         if claim.get("title"):
-            lines.append(f"   {quote(claim['title'])}")
+            # The one unbounded string on this page. It used to be served whole under
+            # `--compact` because the flag's only effect here was dropping the envelope
+            # sentence -- which is to say the page's entire "compact saving" was its
+            # untrusted-content warning. That sentence stays now, so the trimming has to
+            # be real.
+            title = str(claim["title"])
+            if compact:
+                title, was_trimmed = trim(title)
+                shortened += was_trimmed
+            lines.append(f"   {quote(title)}")
         if claim.get("url"):
             lines.append(f"   {claim['url']}")
         lines.append("")
     if total > len(claims):
         lines.append(f"({total - len(claims)} more, not shown.)")
+    if shortened:
+        lines.append(
+            f"({shortened} title{'' if shortened == 1 else 's'} shortened to {COMPACT_CHARS} "
+            "characters by --compact)"
+        )
     return envelope("\n".join(lines).rstrip(), compact=compact)
 
 

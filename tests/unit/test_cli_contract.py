@@ -96,6 +96,12 @@ def test_every_verb_is_exercised_below() -> None:
     assert set(_verbs()) == set(MINIMAL), "a verb was added without a row in MINIMAL"
 
 
+def _dest(flag: str) -> str:
+    """argparse's own transformation, which a flag with an internal dash needs:
+    `--no-compact` parses into `no_compact`."""
+    return flag.lstrip("-").replace("-", "_")
+
+
 @pytest.mark.parametrize("verb", sorted(MINIMAL))
 @pytest.mark.parametrize("flag", [flag for flag, _ in cli.GLOBAL_FLAGS])
 def test_every_global_flag_is_accepted_after_every_verb(verb: str, flag: str) -> None:
@@ -112,7 +118,7 @@ def test_every_global_flag_is_accepted_after_every_verb(verb: str, flag: str) ->
 
     args = cli.build_parser().parse_args(argv)
 
-    assert getattr(args, flag.lstrip("-")) not in (False, None)
+    assert getattr(args, _dest(flag)) not in (False, None)
 
 
 @pytest.mark.parametrize("flag", [flag for flag, _ in cli.GLOBAL_FLAGS])
@@ -123,9 +129,9 @@ def test_the_subparser_alias_does_not_overwrite_a_flag_given_before_the_verb(fla
 
     args = cli.build_parser().parse_args(before)
 
-    assert getattr(args, flag.lstrip("-")) not in (False, None)
+    assert getattr(args, _dest(flag)) not in (False, None)
     # And nothing else was turned on by being adjacent to it.
-    on = [f for f, _ in cli.GLOBAL_FLAGS if getattr(args, f.lstrip("-")) not in (False, None)]
+    on = [f for f, _ in cli.GLOBAL_FLAGS if getattr(args, _dest(f)) not in (False, None)]
     assert on == [flag]
 
 
@@ -353,4 +359,43 @@ def test_copies_says_what_it_normalized_away() -> None:
     assert "--exact" not in grouped
     assert "--exact" in cli._copies_text(
         {"symbol": "f", "total": 1, "groups": [{"count": 1, "copies": []}]}, presentation=True
+    )
+
+
+def test_compact_is_the_default_for_a_pipe_and_not_for_a_terminal(monkeypatch) -> None:
+    """The saving that depends on the caller remembering a flag does not happen.
+
+    A tool result is re-sent with every later turn that reads it, so its cost is its size
+    times the turns remaining: measured on one agent run, relore's output was 32,349
+    tokens and 892,197 once re-billing was counted — 47% of that run. The agent used
+    `--compact` twice in twenty-three calls. So the pipe gets it by default, a terminal
+    does not (a person pays once), and `--no-compact` is the way back.
+    """
+    args = cli.build_parser().parse_args(["search", "anything"])
+
+    monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: False)
+    assert cli._compact(args) is True
+    monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: True)
+    assert cli._compact(args) is False
+
+
+def test_no_compact_undoes_the_pipe_default_and_compact_overrides_a_terminal(monkeypatch) -> None:
+    piped = cli.build_parser().parse_args(["--no-compact", "search", "anything"])
+    monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: False)
+    assert cli._compact(piped) is False
+
+    asked = cli.build_parser().parse_args(["--compact", "search", "anything"])
+    monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: True)
+    assert cli._compact(asked) is True
+
+
+def test_json_is_not_trimmed_by_the_pipe_default(monkeypatch) -> None:
+    """`--json` is the machine surface and asked for the structure: trimming it by default
+    would drop fields from a program's input to save a model's context, which is the wrong
+    caller paying. Asking for both still trims, because then somebody asked."""
+    monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: False)
+
+    assert cli._compact(cli.build_parser().parse_args(["--json", "search", "x"])) is False
+    assert (
+        cli._compact(cli.build_parser().parse_args(["--json", "--compact", "search", "x"])) is True
     )

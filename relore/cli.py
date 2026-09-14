@@ -107,6 +107,13 @@ GLOBAL_FLAGS: tuple[tuple[str, dict[str, Any]], ...] = (
         },
     ),
     (
+        "--no-compact",
+        {
+            "action": "store_true",
+            "help": "the whole page when piped, undoing the default below",
+        },
+    ),
+    (
         "--plain",
         {
             "action": "store_true",
@@ -388,7 +395,7 @@ def _search(args: argparse.Namespace) -> int:
             "repos": _repos(args),
             "since": args.since,
             "limit": args.limit,
-            "compact": args.compact,
+            "compact": _compact(args),
             "sort": args.sort,
             "expand": args.expand,
             # The server renders it, so the envelope a person inspects in the web UI and
@@ -402,7 +409,7 @@ def _search(args: argparse.Namespace) -> int:
         payload,
         lambda: (
             payload.get("rendered")
-            or render_search(payload, compact=args.compact, presentation=_presentation(args))
+            or render_search(payload, compact=_compact(args), presentation=_presentation(args))
         ),
     )
 
@@ -410,7 +417,7 @@ def _search(args: argparse.Namespace) -> int:
 def _thread(args: argparse.Namespace) -> int:
     query = {
         "focus": args.focus,
-        "compact": str(args.compact).lower(),
+        "compact": str(_compact(args)).lower(),
         "render": str(not args.json).lower(),
         "presentation": str(_presentation(args)).lower(),
         "full": str(args.full).lower(),
@@ -423,7 +430,7 @@ def _thread(args: argparse.Namespace) -> int:
         payload,
         lambda: (
             payload.get("rendered")
-            or render_thread(payload, compact=args.compact, presentation=_presentation(args))
+            or render_thread(payload, compact=_compact(args), presentation=_presentation(args))
         ),
     )
 
@@ -436,7 +443,7 @@ def _inflight(args: argparse.Namespace) -> int:
     """
     query = {
         "render": str(not args.json).lower(),
-        "compact": str(args.compact).lower(),
+        "compact": str(_compact(args)).lower(),
         "presentation": str(_presentation(args)).lower(),
     }
     if repo := _repo(args):
@@ -447,7 +454,7 @@ def _inflight(args: argparse.Namespace) -> int:
         payload,
         lambda: (
             payload.get("rendered")
-            or render_inflight(payload, compact=args.compact, presentation=_presentation(args))
+            or render_inflight(payload, compact=_compact(args), presentation=_presentation(args))
         ),
     )
 
@@ -461,7 +468,7 @@ def _why(args: argparse.Namespace) -> int:
         "path": path,
         "line": line,
         "render": str(not args.json).lower(),
-        "compact": str(args.compact).lower(),
+        "compact": str(_compact(args)).lower(),
         "presentation": str(_presentation(args)).lower(),
     }
     if repo := _repo(args):
@@ -472,7 +479,7 @@ def _why(args: argparse.Namespace) -> int:
         payload,
         lambda: (
             payload.get("rendered")
-            or render_why(payload, compact=args.compact, presentation=_presentation(args))
+            or render_why(payload, compact=_compact(args), presentation=_presentation(args))
         ),
     )
 
@@ -490,6 +497,32 @@ def _presentation(args: argparse.Namespace) -> bool:
     happens to own a TTY.
     """
     return sys.stdout.isatty() and not getattr(args, "plain", False)
+
+
+def _compact(args: argparse.Namespace) -> bool:
+    """Whether to trim quoted prose -- **on by default for a pipe**.
+
+    A tool result is not paid for once. It is re-sent with every later turn of the session
+    that read it, so its cost is its size times the turns remaining: measured on one agent
+    run, relore's own output came to 32,349 tokens and **892,197** once re-billing is
+    counted, 47% of that run. A 12,000-character thread page read at turn 13 is thirty
+    copies of itself by the end.
+
+    `--compact` existed for this and an agent used it twice in twenty-three calls. A saving
+    that depends on the caller remembering a flag does not happen, so the flag becomes the
+    default for the caller that pays for it -- and `--no-compact` is there for the pipe
+    that genuinely wants the whole page. A terminal is unchanged: a person is reading it
+    once, and pays for it once.
+    """
+    if getattr(args, "compact", False):
+        return True
+    if getattr(args, "json", False):
+        # `--json` is the machine surface and asked for the structure. Trimming it by
+        # default would drop fields from a program's input to save a model's context --
+        # the wrong caller paying. Explicit `--compact --json` still trims, because then
+        # somebody asked.
+        return False
+    return not sys.stdout.isatty() and not getattr(args, "no_compact", False)
 
 
 def _emit(args: argparse.Namespace, payload: dict[str, Any], text) -> int:
@@ -667,7 +700,7 @@ def _grep(args: argparse.Namespace) -> int:
     return _emit(
         args,
         payload,
-        lambda: _grep_text(payload, compact=args.compact, presentation=_presentation(args)),
+        lambda: _grep_text(payload, compact=_compact(args), presentation=_presentation(args)),
     )
 
 

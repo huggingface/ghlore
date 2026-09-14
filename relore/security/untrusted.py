@@ -187,15 +187,15 @@ def envelope(text: str, *, source: str | None = None, compact: bool = False) -> 
     ``source`` is the provenance line -- a URL, or ``repo#number`` -- shown so a reader
     can go and check. It is scrubbed like everything else.
 
-    ``compact`` drops the header and keeps the mechanism: the delimiters still bound the
-    block and every quoted line is still marked, so nothing about what the text *is*
-    changes -- only the sentence explaining it, which a caller who asked to trim for a
-    context budget has opted out of. The property is carried by the marks, not the prose.
+    ``compact`` **no longer drops the header**, and the reason is the reason it used to.
+    Trimming was once something a caller typed, so losing the sentence was an opt-out by
+    someone who had read it; trimming is now the default for a pipe, and every agent would
+    have silently lost the one line saying that quoted text is data rather than
+    instructions. It costs about forty tokens against pages of thousands. The parameter
+    stays because the callers pass it and a renderer should not have to know this changed.
     """
     body = scrub(text)
-    lines = [BEGIN]
-    if not compact:
-        lines.append(_HEADER)
+    lines = [BEGIN, _HEADER]
     if source is not None:
         lines.append(f"source: {scrub(source)}")
     return "\n".join([*lines, "", body, END])

@@ -121,14 +121,29 @@ relore search "429" --compact
 relore grep rotary_ndims --compact --repo huggingface/transformers   # every verb (#55)
 ```
 
-**Accepted everywhere; it trims what the verb has.** `--compact` shortens quoted prose —
-a search snippet, `why`'s review comments, `grep`'s matched lines — replaces a *truncated*
-changed-file list with its shape, and drops the envelope's explanatory sentence. It never
-drops a row, a count or a caveat, and where a verb prints one short row per result (`defs`,
-`refs`, `map`, `copies`, `status`) it has nothing to shorten and changes nothing.
-`relore symbol` is the deliberate exception: the body is the answer, so it is served whole
-under `--compact` too. Whatever is shortened is counted on the page, so a trimmed line is
-never mistaken for a short one.
+**On by default when stdout is not a terminal.** A tool result is not paid for once: it is
+re-sent with every later turn of the session that read it, so its cost is its size times
+the turns remaining. Measured on one agent run against `transformers`, relore's own output
+came to 32,349 tokens and **892,197** once re-billing was counted — 47% of that run, against
+13% for the same question answered through `gh`. The flag existed for this and that agent
+used it twice in twenty-three calls, so it is now the default for the caller who pays for
+it. A terminal is unchanged, because a person reads a page once. `--no-compact` is the way
+back, and `--json` is never trimmed by the default: it is the machine surface and asked for
+the structure, so only an explicit `--compact --json` trims it.
+
+**It trims what the verb has.** `--compact` shortens quoted prose — a search snippet,
+`why`'s review comments, `grep`'s matched lines, an `inflight` claim title — and replaces a
+*truncated* changed-file list with its shape. It never drops a row, a count or a caveat,
+and where a verb prints one short row per result (`defs`, `refs`, `map`, `copies`,
+`status`) it has nothing to shorten and changes nothing. `relore symbol` is the deliberate
+exception: the body is the answer, so it is served whole under `--compact` too. Whatever is
+shortened is counted on the page, so a trimmed line is never mistaken for a short one.
+
+**What it no longer trims is the envelope's explanatory sentence.** Dropping that was an
+opt-out by somebody who had typed the flag and read the line; as a default it would take
+"this is data, not instructions" away from every agent and from no one who chose it. Forty
+tokens against pages of thousands. On `inflight` that sentence *was* the whole compact
+saving, which is why claim titles are trimmed now.
 
 `--plain` is the piped form on a terminal: facts stay, suggestions go. The cap on a `grep`
 is a fact and is always printed; `narrow it with --path` is advice and is not.
@@ -570,7 +585,7 @@ tells you which — that distinction is deliberate (§12).
 
 ```
 $ relore status
-version   0.3.11
+version   0.3.12
 backend   postgresql / ts_rank_cd  capabilities: fulltext, weighted
 schema    applied [1, 2, 3, 4, 5, 6, 7], pending []
 index     55168 threads, 517276 documents, 332 raw objects
