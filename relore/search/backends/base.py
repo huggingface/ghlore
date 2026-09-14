@@ -43,6 +43,7 @@ from sqlalchemy import (
 
 from relore.ingest.extract import CHANGED, FROM_COMMENT, MENTIONED
 from relore.search.queries import (
+    AFTER_CURSOR,
     BODY_SLACK_CHARS,
     ENDS_AND_MIDDLE,
     HUMAN_TRUST,
@@ -51,7 +52,9 @@ from relore.search.queries import (
     MAX_BODY_CHARS,
     MAX_CLAIMS,
     MAX_HITS_PER_THREAD,
+    MAX_OUTLINE_COMMENTS,
     MAX_THREAD_COMMENTS,
+    OUTLINE_CHARS,
     PASSAGE_OVERFETCH,
     THREAD_ENDS,
     BackendInfo,
@@ -499,7 +502,14 @@ class SearchBackend(ABC):
     # -- one thread ------------------------------------------------------
 
     def thread(
-        self, repo: str, number: int, *, focus: str = "", full: bool = False
+        self,
+        repo: str,
+        number: int,
+        *,
+        focus: str = "",
+        full: bool = False,
+        after: str = "",
+        outline: bool = False,
     ) -> ThreadView | None:
         """One thread, capped (section 6).
 
@@ -507,6 +517,19 @@ class SearchBackend(ABC):
         :meth:`_focused`. Without it the order is the opening and the closing of the
         thread rather than the first N: on a long thread the resolution is at the end, and
         returning only the beginning reliably returns the part that was wrong.
+
+        ``outline`` and ``after`` are the two ways out of the page cap, and they exist
+        because of what the cap does to a caller who needs the *whole* thread. Measured on
+        one agent run: ``transformers#37866`` has 70 comments and the page serves ten, so
+        the agent came back **six times** with six different ``--focus`` strings, spent
+        3,558 tokens, and saw overlapping samples -- the shape this project keeps finding,
+        one level up from a file re-read at a different line range each time.
+
+        Raising the cap is not the answer (section 6: the caps are the contract). So:
+        ``outline`` serves one *line* per comment for the whole thread, which is the
+        ``defs`` move applied to a discussion -- ask for the shape, then read the parts --
+        and ``after`` turns the repeated sample into a sweep by starting the page after a
+        comment the caller has already seen.
         """
         with self.engine.connect() as conn:
             row = conn.execute(
@@ -547,7 +570,9 @@ class SearchBackend(ABC):
             meta = row._mapping["metadata"] or {}
             changed = meta.get("changed_files")
             body, body_chars, body_truncated = self._body(conn, row.id, full=full)
-            comments, total, matched, selection, suppressed = self._comments(conn, row, focus)
+            comments, total, matched, selection, suppressed, sketch = self._comments(
+                conn, row, focus, after=after, outline=outline
+            )
 
         return ThreadView(
             repo=row.repo,
@@ -582,6 +607,9 @@ class SearchBackend(ABC):
             selection=selection,
             focus=focus,
             focus_matched=matched,
+            outline=sketch,
+            outline_total=len(sketch),
+            after=after,
         )
 
     # -- why is this line like this (issue #9) ----------------------------
@@ -816,8 +844,8 @@ class SearchBackend(ABC):
         return snippet(whole, limit=MAX_BODY_CHARS), len(whole), True
 
     def _comments(
-        self, conn: Any, thread: Any, focus: str
-    ) -> tuple[tuple[Hit, ...], int, int | None, str, int]:
+        self, conn: Any, thread: Any, focus: str, *, after: str = "", outline: bool = False
+    ) -> tuple[tuple[Hit, ...], int, int | None, str, int, tuple[Hit, ...]]:
         def documents(tiers: tuple[str, ...]) -> Select:
             return select(
                 s.documents.c.id,
@@ -836,6 +864,11 @@ class SearchBackend(ABC):
             )
 
         base = documents(admissible_trust(None))
+        # The sweep cursor, applied before anything counts or selects. `total` therefore
+        # stays the thread's whole comment count -- the denominator a reader needs is "of
+        # this thread", never "of what is left after where I resumed" -- while everything
+        # that *chooses* rows sees only what comes after the cursor.
+        remaining = _after(conn, base, after) if after.strip() else base
         # Comments, not rows: a 9,827-character comment is several documents and counting
         # them called one comment two (huggingface/relore#18). `passages` is the same
         # aggregate read the other way, and it is what lets a hit say it is a piece.
@@ -852,12 +885,26 @@ class SearchBackend(ABC):
             matched = len(
                 {
                     (row.source_type, row.source_id)
-                    for row in conn.execute(self.fts_filter(base, focus))
+                    for row in conn.execute(self.fts_filter(remaining, focus))
                 }
             )
-            rows, selection = self._focused(conn, base, focus), "focus"
+            rows, selection = self._focused(conn, remaining, focus), "focus"
+        elif after.strip():
+            # A cursor means a sweep, and a sweep is sequential. `ends+middle` is a
+            # *sampling* strategy for "show me this thread", and composed with a cursor it
+            # is a trap: the sample's last row is the thread's last comment, so the obvious
+            # next call -- after the last id on the page -- returns nothing and reads as
+            # "that was the end of it". Chronological from the cursor is what `--after`
+            # means, and it is the only selection that can actually reach every comment.
+            rows, selection = (
+                _one_per_comment(_chronological(conn, remaining, None))[:MAX_THREAD_COMMENTS],
+                AFTER_CURSOR,
+            )
         else:
-            rows, selection = _ends_and_middle(conn, base, MAX_THREAD_COMMENTS), ENDS_AND_MIDDLE
+            rows, selection = (
+                _ends_and_middle(conn, remaining, MAX_THREAD_COMMENTS),
+                ENDS_AND_MIDDLE,
+            )
 
         terms = tokenize(focus)
         hits = tuple(
@@ -880,7 +927,47 @@ class SearchBackend(ABC):
             )
             for row in rows
         )
-        return hits, total, matched, selection, suppressed
+        sketch = self._outline(conn, remaining, passages) if outline else ()
+        return hits, total, matched, selection, suppressed, sketch
+
+    def _outline(
+        self, conn: Any, base: Select, passages: dict[tuple[str, str], int]
+    ) -> tuple[Hit, ...]:
+        """Every comment, one line's worth each, oldest first (relore#70).
+
+        Honours ``--after``, so a thread too long to outline whole is swept rather than
+        truncated. That is the opposite of the first design, and the measurement is why:
+        a 644-comment thread cannot be served complete at any line length, so a view that
+        ignored the cursor would put rows 101 onwards permanently out of reach -- which is
+        the silent incompleteness this verb exists to end, reintroduced by the fix for it.
+
+        Chronological, never ranked. A ranked outline would be a second answer to the
+        question ``--focus`` already answers, and the reason to read a whole thread is
+        usually that ranking it has not worked -- which is exactly the run this came from.
+        :data:`OUTLINE_CHARS` is deliberately short of quotable: this says *which* comment
+        to ask for, and a line long enough to answer with would make it another page.
+        """
+        rows = _one_per_comment(_chronological(conn, base, None))[:MAX_OUTLINE_COMMENTS]
+        return tuple(
+            Hit(
+                repo="",
+                number=0,
+                thread_type="",
+                title="",
+                source_type=row.source_type,
+                url=row.url,
+                author=row.author,
+                trust=row.trust,
+                age=render_age(row.github_created_at),
+                snippet=snippet(row.body_text, limit=OUTLINE_CHARS),
+                score=0.0,
+                created_at=row.github_created_at,
+                source_id=str(row.source_id or ""),
+                chunk_index=int(row.chunk_index or 0),
+                passages=passages.get((row.source_type, row.source_id), 1),
+            )
+            for row in rows
+        )
 
     def _focused(self, conn: Any, base: Select, focus: str) -> list[Any]:
         """Order a thread's comments by a focus query. **Never filter on it.**
@@ -1094,6 +1181,54 @@ def _files_by_provenance(conn: Any, thread_id: int) -> dict[str, tuple[str, ...]
         source = source or (CHANGED if change_type is not None else MENTIONED)
         out.get(source, out[MENTIONED]).append(str(path))
     return {source: tuple(dict.fromkeys(paths)) for source, paths in out.items()}
+
+
+def _after(conn: Any, base: Select, after: str) -> Select:
+    """The same query, starting strictly after one comment (relore#70).
+
+    The cursor is a comment's ``source_id`` -- the id in its own GitHub URL, which is what
+    a caller has in front of them after reading a page. An id this thread does not hold
+    narrows nothing and is **not** an error: the alternative is a 4xx on a sweep that has
+    simply reached a comment the trust floor excludes, and a caller cannot tell those
+    apart from outside.
+
+    Ordered on ``(github_created_at, source_type, source_id)`` and compared as a widened
+    tuple rather than by timestamp alone. Two comments on one thread can share a second --
+    a review and its first inline comment routinely do -- and a cursor that compared only
+    the timestamp would skip whichever of them sorted second. Skipping one comment of a
+    sweep is precisely the silent incompleteness this verb exists to stop, so the
+    comparison is spelled out rather than approximated. Written as ``or_``/``and_`` and not
+    as a row-value comparison, which SQLite only learned in 3.15.
+    """
+    cursor = conn.execute(
+        base.with_only_columns(
+            s.documents.c.github_created_at,
+            s.documents.c.source_type,
+            s.documents.c.source_id,
+        )
+        .where(s.documents.c.source_id == after)
+        .limit(1)
+    ).one_or_none()
+    if cursor is None:
+        return base
+    when, kind, ident = cursor
+    same = or_(
+        s.documents.c.source_type > kind,
+        and_(s.documents.c.source_type == kind, s.documents.c.source_id > ident),
+    )
+    if when is None:
+        # An undated comment sorts last (`_chronological` is `nullslast`), so what follows
+        # it is the rest of the undated ones. Explicit, because `col > NULL` is NULL and a
+        # cursor that quietly matched nothing would end a sweep early and look finished.
+        return base.where(and_(s.documents.c.github_created_at.is_(None), same))
+    return base.where(
+        or_(
+            s.documents.c.github_created_at > when,
+            and_(s.documents.c.github_created_at == when, same),
+            # The undated tail, which sorts after every dated comment.
+            s.documents.c.github_created_at.is_(None),
+        )
+    )
 
 
 def _passage_counts(conn: Any, base: Select) -> dict[tuple[str, str], int]:

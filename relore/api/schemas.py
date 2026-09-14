@@ -191,6 +191,25 @@ def inflight_json(view: InflightView) -> dict[str, Any]:
     }
 
 
+def _outline_json(hit: Hit) -> dict[str, Any]:
+    """One outline row. Deliberately not :func:`hit_json`: an outline line carries what is
+    needed to *choose* a comment and nothing that would let it be quoted -- no score, no
+    breakdown, no repeated repo and number, and a snippet cut at
+    :data:`~relore.search.queries.OUTLINE_CHARS`. The whole value of the view is that it
+    is cheap enough to serve complete."""
+    return {
+        "id": hit.source_id,
+        "source_type": hit.source_type,
+        "author": hit.author,
+        "trust": hit.trust,
+        "age": hit.age,
+        "date": render_stamp(hit.created_at),
+        "url": hit.url,
+        "passages": hit.passages,
+        "snippet": hit.snippet,
+    }
+
+
 def why_json(view: WhyView, *, blame: Any) -> dict[str, Any]:
     """``GET /api/v1/why`` -- the commit, the pull request, and what was said on the line.
 
@@ -312,4 +331,11 @@ def thread_json(view: ThreadView, *, compact: bool = False) -> dict[str, Any]:
         # question matched nothing, this is the thread in order" rather than "nothing here".
         "focus": view.focus,
         "focus_matched": view.focus_matched,
+        # One line per comment for the whole thread (relore#70). Present and empty unless
+        # `--outline` asked, so a caller can tell "not requested" from "nothing to show".
+        "outline": [_outline_json(c) for c in view.outline],
+        "outline_returned": len(view.outline),
+        # Where a sweep resumed. A page that silently begins in the middle is worse than
+        # one that stops, so the cursor travels with the page that honoured it.
+        "after": view.after,
     }

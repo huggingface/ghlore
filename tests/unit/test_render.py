@@ -149,7 +149,12 @@ def test_compact_serves_a_truncated_file_list_as_its_shape() -> None:
     paths += ["tests/models/test_rope.py", "docs/source/en/rope.md"]
     payload = _thread(files_changed=paths, files_total=323, files_collected=102)
 
-    full, out = render_thread(payload), render_thread(payload, compact=True)
+    # `--files`, because the paths are behind it now (relore#70) — what is under test
+    # here is what `--compact` does to the list once it has been asked for.
+    full, out = (
+        render_thread(payload, files=True),
+        render_thread(payload, compact=True, files=True),
+    )
 
     assert "100 under src/transformers/ across 100 directories" in out
     # The cut point stays -- it is a caveat, not a path in a list.
@@ -166,7 +171,7 @@ def test_compact_keeps_a_complete_file_list() -> None:
     complete one can, and answering it is the whole of what the paths are for."""
     payload = _thread(files_changed=["src/a.py", "src/b.py"], files_total=2, files_collected=2)
 
-    out = render_thread(payload, compact=True)
+    out = render_thread(payload, compact=True, files=True)
 
     assert "src/a.py, src/b.py" in out
     assert "paths omitted" not in out
@@ -181,7 +186,7 @@ def test_the_shape_counts_directories_only_when_they_spread() -> None:
         files_collected=3,
     )
 
-    out = render_thread(payload, compact=True)
+    out = render_thread(payload, compact=True, files=True)
 
     assert "2 under pkg/mod/, 1 at the root" in out
     assert "across" not in out.split("cut after")[1].split("(paths omitted")[0]
@@ -412,6 +417,135 @@ def test_an_unchunked_comment_says_nothing_about_passages() -> None:
     )
 
     assert "passage" not in out
+
+
+# -- the diff's paths are behind a flag (huggingface/relore#70) -------------
+
+
+def test_the_file_count_and_its_caveat_are_never_behind_a_flag() -> None:
+    """What made this page load-bearing was never the paths: it is the count and the
+    truncation notice, because a short list reads as a weak positive and a missing entry
+    reads as a negative fact. Those cost a line and stay."""
+    payload = _thread(
+        files_changed=["src/aaa.py", "src/zzz.py"], files_total=323, files_collected=2
+    )
+
+    out = render_thread(payload)
+
+    assert "2 of 323 collected" in out and "TRUNCATED" in out
+    # `src/zzz.py` survives as the *cut point*, which is a caveat rather than a path in a
+    # list. The list itself is gone.
+    assert "cut after src/zzz.py" in out
+    assert "src/aaa.py" not in out
+
+
+def test_the_paths_come_back_with_files() -> None:
+    payload = _thread(files_changed=["src/a.py", "src/b.py"], files_total=2, files_collected=2)
+
+    assert "src/a.py" not in render_thread(payload)
+    assert "src/a.py, src/b.py" in render_thread(payload, files=True)
+
+
+def test_a_complete_list_says_where_the_paths_went_at_a_terminal() -> None:
+    """Facts are never presentation; a pointer to a flag is."""
+    payload = _thread(files_changed=["src/a.py"], files_total=1, files_collected=1)
+
+    assert "`--files`" in render_thread(payload, presentation=True)
+    assert "`--files`" not in render_thread(payload)
+
+
+def test_the_anchored_and_mentioned_paths_are_not_gated() -> None:
+    """Only the diff's own page is gated. These two are a handful of paths by nature and
+    are each other's cross-check (huggingface/relore#17)."""
+    payload = _thread(
+        files_changed=["src/aaa.py", "src/zzz.py"],
+        files_total=9,
+        files_collected=2,
+        files_anchored=["src/anchored.py"],
+        files_mentioned=["src/mentioned.py"],
+    )
+
+    out = render_thread(payload)
+
+    assert "src/anchored.py" in out and "src/mentioned.py" in out
+    assert "src/aaa.py" not in out, "the diff's page is gated; these two are not"
+
+
+# -- the outline (huggingface/relore#70) -----------------------------------
+
+
+def test_the_outline_replaces_the_page_rather_than_joining_it() -> None:
+    """Two views of the same comments on one page would be the cost of both and the use of
+    neither."""
+    payload = _thread(
+        comments_total=70,
+        outline=[
+            {
+                "id": "1",
+                "author": "bob",
+                "trust": "reported",
+                "age": "3d",
+                "source_type": "issue_comment",
+                "snippet": "the first one",
+            },
+        ],
+        comments=[{"repo": "o/n", "number": 1, "snippet": "a served comment"}],
+    )
+
+    out = render_thread(payload)
+
+    assert "the first one" in out
+    assert "a served comment" not in out
+
+
+def test_an_outline_that_did_not_reach_the_end_shouts_about_it() -> None:
+    """The outline's whole promise is completeness, so the case where it cannot deliver has
+    to be louder than a cap normally is."""
+    payload = _thread(
+        comments_total=644,
+        outline=[
+            {
+                "id": str(n),
+                "author": "bob",
+                "trust": "reported",
+                "age": "3d",
+                "source_type": "issue_comment",
+                "snippet": f"comment {n}",
+            }
+            for n in range(100)
+        ],
+    )
+
+    out = render_thread(payload)
+
+    assert "outline: 100 of 644 comments" in out
+    assert "CAPPED at 100: 544 more this view did not reach" in out
+
+
+def test_a_complete_outline_does_not_cry_truncation() -> None:
+    payload = _thread(
+        comments_total=2,
+        outline=[
+            {
+                "id": "1",
+                "author": "bob",
+                "trust": "reported",
+                "age": "3d",
+                "source_type": "issue_comment",
+                "snippet": "one",
+            },
+            {
+                "id": "2",
+                "author": "bob",
+                "trust": "reported",
+                "age": "3d",
+                "source_type": "issue_comment",
+                "snippet": "two",
+            },
+        ],
+    )
+
+    assert "CAPPED" not in render_thread(payload)
 
 
 # -- nothing matched -------------------------------------------------------

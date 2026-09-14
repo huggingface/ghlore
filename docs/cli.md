@@ -248,6 +248,64 @@ a state is an act and `🤗` is not:
 (79 not shown: a thread is never returnable in full. `--focus "<what you care about>"` ranks all of them.)
 ```
 
+### When ten is not enough: `--outline`, then `--after`
+
+The cap is the contract, not a default, and raising it is not the answer. What is, is a
+cheaper *complete* view — the same move `defs` makes for a file. Measured on one agent run
+against `transformers#37866`, a 70-comment thread: the agent came back **six times** with
+six different `--focus` strings and spent 3,558 tokens seeing overlapping samples of it.
+
+```
+$ relore thread 37866 --outline --repo huggingface/transformers
+-- outline: 70 of 70 comments, oldest first, 2 machine-tier suppressed, current to … --
+  1. 2091231498  [authoritative]  16mo  review_comment  @Cyrilvallez
+> Unfortunately torch.compile.disable is just a graph break, so this won…
+  2. 2091240011  [contributor claim]  16mo  issue_comment  @bob
+> Rebased on main, CI is green now
+  …
+```
+
+One line per comment: the id to ask for it by, the standing to weigh it by, the age, and
+sixty characters — enough to recognise the comment you want, deliberately short of enough
+to quote. Chronological and never ranked: ranking is what `--focus` does, and the reason
+to read a whole thread is usually that ranking has not worked.
+
+An outline is capped too, at a hundred, and **says so loudly** when it did not reach the
+end — because completeness is its whole promise. Nothing is cheap enough to serve a
+644-comment thread whole; 200 rows of one measured at 6,626 tokens, five times the page it
+replaces. So sweep it:
+
+```
+$ relore thread 46419 --outline --repo huggingface/transformers
+-- outline: 100 of 639 comments, …, CAPPED at 100: 539 more this view did not reach --
+$ relore thread 46419 --outline --after 4980470657 --repo huggingface/transformers
+```
+
+`--after` works on the bodies too, and that is the point: pick the ids off the outline and
+read exactly those comments. A page asked with `--after` is **sequential**, not sampled —
+the next comments in order — because that is the only selection that can reach all of them.
+
+One trap, guarded rather than documented away: `--after` taken from a *sampled* page starts
+at the thread's last comment, since that is where the sample ends. The result is correctly
+empty and would read as "that was the end of it", so the page says which happened:
+
+```
+-- 0 of 70 comments, sweeping in order from after 2091240011 --
+nothing follows that comment. It is at or after the last of this thread's 68 — which is
+also what you get by sweeping from a SAMPLED page, whose last row is the thread's last
+comment.
+```
+
+### `--files`: the diff's paths, on request
+
+The changed-file **count** and its truncation notice are always on the page — a short list
+reads as a weak positive and a missing entry reads as a negative fact, and both of those
+are what make this line load-bearing. The paths themselves are behind `--files`. Measured
+on the same run: `thread 43121 --full` spent **1,350 tokens on 98 paths**, 51% of that page
+and 7% of every tool result in the whole session, and not one of them was referred to
+again. The anchored and mentioned lists are not gated — they are a handful of paths by
+nature and are each other's cross-check.
+
 That wording is the fix for a real misreading: a bare `-- 10 of 89 comments --` was read as
 the ten *best*, so the agent concluded the thread held nothing further — while the review
 that answered its question sat at position 51 of 97. **If you have a question, pass
@@ -644,7 +702,7 @@ tells you which — that distinction is deliberate (§12).
 
 ```
 $ relore status
-version   0.3.14
+version   0.3.15
 backend   postgresql / ts_rank_cd  capabilities: fulltext, weighted
 schema    applied [1, 2, 3, 4, 5, 6, 7], pending []
 index     55168 threads, 517276 documents, 332 raw objects

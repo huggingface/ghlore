@@ -53,6 +53,10 @@ BODY_SLACK_CHARS = 80
 #: that decided the question sat at position 51 of 97 and was structurally unreachable
 #: (huggingface/relore#16).
 ENDS_AND_MIDDLE = "ends+middle"
+#: What a page asked with ``--after`` does instead: the next comments in order. Named,
+#: because it is a third selection and a reader has to know which one produced the page --
+#: a sweep's page is neither a sample nor a ranking.
+AFTER_CURSOR = "after"
 #: How many of the ten each end gets. Small on purpose: the opening states the problem and
 #: the last word is usually the resolution, but everything else that matters is between
 #: them.
@@ -60,6 +64,25 @@ THREAD_ENDS = 2
 #: How much more than a page the focused fetch asks for, so that collapsing a comment's
 #: chunks into one hit still leaves ten comments to show.
 PASSAGE_OVERFETCH = 3
+#: The outline's own cap. Ten times the page, because the outline exists to be *complete*
+#: where the page cannot be: measured on one agent run against ``transformers#37866``, a
+#: 70-comment thread served ten at a time, the agent came back **six times** with six
+#: different ``--focus`` strings and spent 3,558 tokens seeing overlapping samples of it.
+#: **Measured, and the first guess was wrong.** At 200 rows and 90 characters each, an
+#: outline of ``transformers#46419`` (644 comments) came to 6,626 tokens -- five times the
+#: page it replaces, and still not complete. Nothing is cheap enough to serve a
+#: 644-comment thread whole, so the cap is set where the *worst* page is about one
+#: ``--full``: a hundred rows at ~25 tokens each. That is complete for the threads this
+#: was built for -- 70 on ``#37866``, where the agent spent 3,558 tokens on six
+#: overlapping samples -- and loudly capped past it, with ``--after`` to sweep the rest.
+MAX_OUTLINE_COMMENTS = 100
+#: How much of a comment one outline line carries. Enough to recognize the comment you are
+#: looking for and never enough to answer with: the outline's job is to say *which* comment
+#: to ask for, and a line long enough to quote would make it a second, worse page. Sixty
+#: characters is most of a first sentence, and it is two thirds of what the snippet cost at
+#: ninety -- which is the whole difference between an outline that pays for itself and one
+#: that does not.
+OUTLINE_CHARS = 60
 #: ``inflight`` answers "is somebody already fixing this?", and the useful answer is one
 #: pull request. Ten is the same cap as a result page for the same reason.
 MAX_CLAIMS = 10
@@ -298,6 +321,15 @@ class ThreadView:
     #: nothing, so this is the thread in order".
     focus: str = ""
     focus_matched: int | None = None
+    #: One line per comment, the whole thread, instead of a page of ten (relore#70).
+    #: Empty unless ``--outline`` asked for it. This is the ``defs`` move applied to a
+    #: discussion: ask for the shape, then read the parts -- because the page cap is the
+    #: contract (section 6) and the answer to "ten of seventy" cannot be a bigger page.
+    outline: tuple[Hit, ...] = ()
+    outline_total: int = 0
+    #: The comment this page starts after, if the caller was sweeping (``--after``). A page
+    #: that silently begins in the middle is the one thing worse than a page that stops.
+    after: str = ""
 
 
 @dataclass(frozen=True)

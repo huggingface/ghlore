@@ -306,17 +306,30 @@ def build_app(
         render: bool = False,
         presentation: bool = False,
         full: bool = False,
+        after: str = "",
+        outline: bool = False,
+        files: bool = False,
     ) -> Response:
-        """One thread, capped (section 6). See :func:`_one_repo` for ``repo``."""
+        """One thread, capped (section 6). See :func:`_one_repo` for ``repo``.
+
+        ``outline`` and ``after`` are the two ways past the cap without raising it, and
+        ``files`` is what the diff's path list costs when nobody asked for it -- see
+        :meth:`~relore.search.backends.base.SearchBackend.thread` and
+        :func:`~relore.render._file_lines` (relore#70).
+        """
         repo = _one_repo(token, repo)
-        view = deps.backend.thread(repo, number, focus=focus, full=full)
+        view = deps.backend.thread(
+            repo, number, focus=focus, full=full, after=after, outline=outline
+        )
         if view is None:
             raise HTTPException(status_code=404, detail=f"{repo}#{number} not found")
         payload = {"notice": NOTICE, "thread": thread_json(view, compact=compact)}
         return _json(
             payload,
             render=(
-                lambda scrubbed: render_thread(scrubbed, compact=compact, presentation=presentation)
+                lambda scrubbed: render_thread(
+                    scrubbed, compact=compact, presentation=presentation, files=files
+                )
             )
             if render
             else None,

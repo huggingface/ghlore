@@ -177,8 +177,63 @@ def _hit_lines(index: int, hit: dict[str, Any], note: str = "") -> list[str]:
     return lines
 
 
+def _outline_lines(
+    thread: dict[str, Any], outline: list[dict[str, Any]], *, presentation: bool = False
+) -> list[str]:
+    """One line per comment, for the whole thread (relore#70).
+
+    The ``defs`` move applied to a discussion. The page serves ten of seventy and the cap
+    is the contract (section 6), so the answer to "I need the other sixty" cannot be a
+    bigger page -- it is a cheaper *complete* view, read to decide which comments to ask
+    for. Measured on the run this came from: the agent spent six ``--focus`` calls and
+    3,558 tokens taking overlapping samples of one 70-comment thread.
+
+    Chronological and unranked, because ranking it is what ``--focus`` already does and
+    the reason to read a whole thread is usually that ranking has not worked. Each line
+    carries the id to ask for it by, so the next call is ``--after`` or a search, never a
+    re-roll of the same lottery.
+    """
+    total = int(thread.get("comments_total") or 0)
+    suppressed = int(thread.get("comments_machine_suppressed") or 0)
+    shown = len(outline)
+    visible = max(total - suppressed, shown)
+    clauses = [f"-- outline: {shown} of {visible} comments, oldest first"]
+    if suppressed:
+        clauses.append(f"{suppressed} machine-tier suppressed")
+    if shown < visible:
+        # The outline exists to be complete, so the one case where it is not has to be
+        # louder here than a cap normally would be.
+        clauses.append(f"CAPPED at {shown}: {visible - shown} more this view did not reach")
+    if thread.get("indexed_at"):
+        clauses.append(f"current to {thread['indexed_at']}")
+    lines = [", ".join(clauses) + " --"]
+    for index, entry in enumerate(outline, start=1):
+        tier = TRUST_LABEL.get(str(entry.get("trust")), str(entry.get("trust")))
+        head = (
+            f"{index:3}. {entry.get('id')}  [{tier}]  {entry.get('age')}  "
+            f"{entry.get('source_type')}"
+        )
+        if entry.get("author"):
+            head += f"  @{entry['author']}"
+        if int(entry.get("passages") or 1) > 1:
+            head += f"  ({entry['passages']} passages)"
+        lines.append(head)
+        lines.append(quote(str(entry.get("snippet", ""))))
+    if presentation:
+        lines += [
+            "",
+            'read one: `relore thread <n> --focus "<words from its line above>"`; '
+            "sweep from here: `relore thread <n> --after <id>`",
+        ]
+    return lines
+
+
 def render_thread(
-    payload: dict[str, Any], *, compact: bool = False, presentation: bool = False
+    payload: dict[str, Any],
+    *,
+    compact: bool = False,
+    presentation: bool = False,
+    files: bool = False,
 ) -> str:
     """One thread, with the cap stated rather than implied.
 
@@ -204,7 +259,7 @@ def render_thread(
     lines += _event_lines(thread)
     if thread.get("labels"):
         lines.append(f"labels: {', '.join(thread['labels'])}")
-    lines += _file_lines(thread, compact=compact, presentation=presentation)
+    lines += _file_lines(thread, compact=compact, presentation=presentation, files=files)
     if thread.get("links"):
         lines.append("links: " + ", ".join(_link(link) for link in thread["links"]))
     lines += ["", quote(thread.get("body", ""))]
@@ -221,6 +276,11 @@ def render_thread(
             + ")"
         )
     lines.append("")
+
+    outline = thread.get("outline") or []
+    if outline:
+        lines += _outline_lines(thread, outline, presentation=presentation)
+        return envelope("\n".join(lines).rstrip(), compact=compact)
 
     comments = thread.get("comments") or []
     returned = thread.get("comments_returned", len(comments))
@@ -250,7 +310,11 @@ def render_thread(
         if matched is not None:
             clause += f" ({matched} of {visible} carry every term)"
         clauses.append(clause)
-    elif thread.get("selection") == "ends+middle" and visible > returned:
+    if thread.get("after"):
+        # Where this page starts. A page that silently begins in the middle is worse than
+        # one that stops, and the count beside it is still "of the whole thread".
+        clauses.append(f"sweeping in order from after {thread['after']}")
+    elif not focus and thread.get("selection") == "ends+middle" and visible > returned:
         # The selection, named. Ten comments under a bare count read as the ten best, and
         # an agent that believes it has read the best ten stops (huggingface/relore#16).
         clauses.append("SAMPLED not ranked: the first and last few and a spread of the middle")
@@ -263,6 +327,22 @@ def render_thread(
         clauses.append(f"current to {thread['indexed_at']}")
     head = ", ".join([f"-- {returned} of {total} comments", *clauses])
     lines.append(head + " --")
+    if not returned and thread.get("after") and visible:
+        # An empty sweep page is the one result here that can be read as "that was the end
+        # of it" while being nothing of the kind: `--after` taken from a *sampled* page
+        # starts at the thread's last comment, because that is where the sample ends. The
+        # page has to say which of the two happened, or the caller stops having seen ten of
+        # seventy and believing it read the thread (huggingface/relore#11).
+        lines.append(
+            f"nothing follows that comment. It is at or after the last of this thread's "
+            f"{visible} — which is also what you get by sweeping from a SAMPLED page, "
+            "whose last row is the thread's last comment."
+            + (
+                " `--outline` lists every comment, in order, with the id to resume from."
+                if presentation
+                else ""
+            )
+        )
     for index, comment in enumerate(comments, start=1):
         lines += _hit_lines(index, comment, note=_passage_note(comment, comments))
     if visible > returned:
@@ -365,9 +445,24 @@ def _link(link: dict[str, Any]) -> str:
 
 
 def _file_lines(
-    thread: dict[str, Any], *, compact: bool = False, presentation: bool = False
+    thread: dict[str, Any],
+    *,
+    compact: bool = False,
+    presentation: bool = False,
+    files: bool = False,
 ) -> list[str]:
     """The changed files and the mentioned ones, on separate lines, each with its meaning.
+
+    **The counts and the caveats are always here; the diff's paths are behind ``--files``**
+    (relore#70). Measured on one agent run asking why a line is written the way it is:
+    ``thread 43121 --full`` spent **1,350 tokens on 98 paths** -- 51% of that page and 7%
+    of every tool result in the whole run -- and not one of them was referred to again.
+    What made this page load-bearing was never the paths: it is the *count* and the
+    truncation notice, because a short list reads as a weak positive and a missing entry
+    reads as a negative fact. Those cost a line and stay. ``--files`` is for the question
+    the paths answer, which is a different question from the one this verb is usually
+    asked. Only the diff's own page is gated: the anchored and mentioned lists are a
+    handful of paths by nature and are each other's cross-check.
 
     A short list of *hits* is read as a weak positive; a *missing entry* is read as a
     negative fact. ``huggingface/transformers#39847`` is the case this exists for: 323
@@ -407,7 +502,10 @@ def _file_lines(
         lines.append(f"changed files: {collected} of {total} — complete")
         # Not shaped under `--compact`: a complete list is the one that *can* answer a
         # membership question, and answering it is the whole of what the paths are for.
-        lines.append("  " + ", ".join(changed))
+        if files:
+            lines.append("  " + ", ".join(changed))
+        elif presentation:
+            lines.append("  (`--files` lists them)")
     elif collected:
         lines.append(
             f"changed files: {collected} of {total} collected. TRUNCATED: a path that is "
@@ -418,7 +516,10 @@ def _file_lines(
             f"{max(changed)} — a path sorting after that one is absent whether or not the "
             "thread touched it"
         )
-        lines += _path_block(changed, compact=compact, presentation=presentation)
+        if files:
+            lines += _path_block(changed, compact=compact, presentation=presentation)
+        elif presentation:
+            lines.append("  (`--files` lists the collected page)")
     else:
         lines.append(
             f"changed files: none collected of {total}, so this thread cannot answer "

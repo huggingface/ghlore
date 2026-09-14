@@ -527,6 +527,23 @@ tells the two apart and says which), and `relore map` with no provider installed
 walk zero files and return an empty map at exit 0 — a missing install wearing a real
 answer, which is what `registry.require_any` exists for.
 
+**A cap you cannot get past is a cap the caller works around, badly.** `thread` serves ten
+comments and that number is the contract (section 6) — but on a 70-comment thread the
+measured consequence was an agent returning to it **six times** with six different
+`--focus` strings, 3,558 tokens, for overlapping samples: the same shape as re-reading one
+file at a different line range each time, one level up. Raising the cap is not the fix. Two
+cheaper views are (relore#70): **`--outline`**, one line per comment for the whole thread —
+the `defs` move applied to a discussion, ask for the shape then read the parts — and
+**`--after <id>`**, which turns the repeated sample into a sweep and makes that page
+*sequential*, because `ends+middle` composed with a cursor starts at the thread's last
+comment and comes back empty. Both are capped and both say so; the outline shouts, because
+completeness is its whole promise. Two measurements shaped this and neither was the first
+guess: an outline at 200 rows × 90 characters cost **6,626 tokens**, five times the page it
+replaces, so the cap is a hundred and the snippet sixty; and `thread 43121 --full` spent
+**1,350 tokens on 98 changed-file paths**, 51% of that page, never referred to again — so
+the paths are behind **`--files`** while the count and the truncation notice, which are what
+made that line load-bearing, stay.
+
 **An age is for reading; a date is for citing, and the page owes both.** Every comment,
 review and hit renders `8mo`, `15mo` — right for a reader, and not enough to *quote*, which
 is what an agent is asked for ("the decisive comment, with its author and its date"). With

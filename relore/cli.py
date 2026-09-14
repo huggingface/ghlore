@@ -230,6 +230,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="serve the opening post whole instead of its first 800 characters",
     )
+    t.add_argument(
+        "--outline",
+        action="store_true",
+        help="one line per comment for the WHOLE thread, instead of a page of ten: "
+        "the shape first, then ask for the parts",
+    )
+    t.add_argument(
+        "--after",
+        default="",
+        metavar="ID",
+        help="start after this comment id (from an outline line or a URL), to sweep a "
+        "long thread instead of re-rolling the same page",
+    )
+    t.add_argument(
+        "--files",
+        action="store_true",
+        help="also list the changed-file paths; the count and the truncation notice are "
+        "always shown",
+    )
 
     inflight = sub.add_parser(
         "inflight",
@@ -421,6 +440,9 @@ def _thread(args: argparse.Namespace) -> int:
         "render": str(not args.json).lower(),
         "presentation": str(_presentation(args)).lower(),
         "full": str(args.full).lower(),
+        "outline": str(args.outline).lower(),
+        "after": args.after,
+        "files": str(args.files).lower(),
     }
     if repo := _repo(args):
         query["repo"] = repo

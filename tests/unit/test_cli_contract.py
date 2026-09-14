@@ -96,6 +96,26 @@ def test_every_verb_is_exercised_below() -> None:
     assert set(_verbs()) == set(MINIMAL), "a verb was added without a row in MINIMAL"
 
 
+def test_thread_takes_the_two_ways_past_the_page_cap_and_the_file_flag() -> None:
+    """huggingface/relore#70. The cap stays (section 6); these are how a caller gets the
+    rest of a thread without it being raised, and `--files` is what the diff's path list
+    costs when nobody asked for it."""
+    args = cli.build_parser().parse_args(
+        ["thread", "1", "--outline", "--after", "123456", "--files"]
+    )
+
+    assert args.outline is True
+    assert args.after == "123456"
+    assert args.files is True
+
+
+def test_thread_defaults_to_the_page_it_always_served() -> None:
+    """All three are additive: the default page is what it was before any of this."""
+    args = cli.build_parser().parse_args(["thread", "1"])
+
+    assert (args.outline, args.after, args.files) == (False, "", False)
+
+
 def _dest(flag: str) -> str:
     """argparse's own transformation, which a flag with an internal dash needs:
     `--no-compact` parses into `no_compact`."""
