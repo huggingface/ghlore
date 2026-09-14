@@ -505,6 +505,16 @@ def render_why(
     if thread.get("links"):
         lines.append("links: " + ", ".join(_link(link) for link in thread["links"]))
 
+    history = payload.get("history") or []
+    if len(history) > 1:
+        # Blame is this list's first row, not the answer (relore#57). The rest is what a
+        # reader has to see to know the top one is a refactor rather than a decision.
+        lines += ["", f"-- this line has {len(history)} revisions, newest first --"]
+        for commit in history:
+            mark = f"#{commit['number']}" if commit.get("number") else "no pull request indexed"
+            lines.append(f"   {str(commit.get('sha', ''))[:12]}  {commit.get('date')}  {mark}")
+            lines.append(quote(str(commit.get("summary", ""))))
+
     anchored = payload.get("anchored") or []
     lines += ["", f"-- {len(anchored)} review comment(s) on this line while it was written --"]
     trimmed = 0
@@ -530,11 +540,50 @@ def render_why(
             + ("; `--json` serves them whole" if presentation else "")
             + ")"
         )
-    if not anchored and presentation:
+    lines += _widened(payload, compact=compact)
+    if presentation and payload.get("level") != "line":
+        # A next command, never a full stop (relore#64): the verb is holding the thread it
+        # just fetched, and an agent told only that a window was empty goes looking for
+        # what it was handed -- eleven calls of it, measured.
         lines.append(
-            "(nobody reviewed this line. `relore thread` reads the rest of the discussion.)"
+            f"(nothing was said on this line itself. `relore thread {payload['number']} "
+            "--full` reads the discussion this came from.)"
         )
     return envelope("\n".join(lines).rstrip(), source=thread.get("url"), compact=compact)
+
+
+def _widened(payload: dict[str, Any], *, compact: bool) -> list[str]:
+    """The levels past the line window, each labelled with what it is.
+
+    Printed always, not only when the line window came back empty: a comment on this file
+    and an approving review are evidence about the same code either way, and the reader
+    who most needs them is the one who thinks two anchored comments were the whole story.
+    """
+    out: list[str] = []
+    for key, heading in (
+        ("on_file", "elsewhere in this file, in the same pull request"),
+        ("reviews", "reviews on this pull request"),
+    ):
+        group = payload.get(key) or []
+        if not group:
+            continue
+        out += ["", f"-- {len(group)} {heading} --"]
+        for index, item in enumerate(group, start=1):
+            tier = TRUST_LABEL.get(str(item.get("trust")), str(item.get("trust")))
+            head = f"{index}. [{tier}]  {item.get('age')}"
+            if item.get("author"):
+                head += f"  @{item['author']}"
+            if item.get("state"):
+                head += f"  {str(item['state']).lower()}"
+            if item.get("line"):
+                head += f"  (line {item['line']})"
+            text = str(item.get("text", ""))
+            if compact:
+                text, _ = trim(text)
+            out += [head, quote(text)]
+            if item.get("url"):
+                out.append(f"   {item['url']}")
+    return out
 
 
 def render_inflight(

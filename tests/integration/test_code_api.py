@@ -227,3 +227,69 @@ def test_a_token_cannot_read_a_tree_it_cannot_read_threads_from(engine: Engine, 
     response = client.get("/api/v1/code/grep", params={"pattern": "x", "repo": REPO})
 
     assert response.status_code == 404
+
+
+# -- the widening, and the line's history (huggingface/relore#57, #63, #64) -------
+
+
+@pytest.fixture
+def argued(engine: Engine, fake: FakeGitHub, clone_root):
+    """A line whose argument is one level up, which is where arguments usually are.
+
+    The line carries no comment of its own; #1 holds a review comment forty lines away and
+    an approving review whose body states the condition. Both are invisible to a window
+    around the line, and the second is invisible to any window at all.
+    """
+    thread = fake.threads[1]
+    fake.add_review_comment(
+        thread, 900, "this branch is the compile path", path="src/modeling_llama.py", line=400
+    )
+    fake.add_review(thread, 901, "approving, but check the fullgraph case", state="APPROVED")
+    with fake.client() as github:
+        index_thread(engine, github, REPO, 1)
+    with engine.begin() as conn:
+        conn.execute(
+            s.thread_commits.insert().values(
+                thread_id=conn.execute(select(s.threads.c.id)).scalar_one(),
+                sha=subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=f"{clone_root}/{REPO.replace('/', '__')}",
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip(),
+                message="the refactor",
+            )
+        )
+    return thread
+
+
+def test_why_widens_past_the_line_and_says_which_level_answered(client, argued) -> None:
+    """`0 comments on this line` is a fact about a window and reads as a fact about the
+    code. The levels past it are returned, and named (#64)."""
+    payload = client.get("/api/v1/why", params={"path": "src/modeling_llama.py", "line": 2}).json()
+
+    assert payload["anchored"] == []
+    assert [c["line"] for c in payload["on_file"]] == [400]
+    assert payload["level"] == "file"
+    # A review body carries no line anchor, so no widening of a *window* reaches it (#63).
+    assert [r["text"] for r in payload["reviews"]] == ["approving, but check the fullgraph case"]
+    assert payload["reviews"][0]["state"] == "APPROVED"
+
+
+def test_why_returns_the_lines_revisions_not_only_its_last_touch(client, clone_root) -> None:
+    """Blame names the last commit; on a reformatted line that is a refactor standing in
+    front of the pull request that decided anything (#57)."""
+    tree = f"{clone_root}/{REPO.replace('/', '__')}"
+    edited = BODY.replace("    return dim", "    return dim  # keep the partial factor")
+    (__import__("pathlib").Path(tree) / "src" / "modeling_llama.py").write_text(edited)
+    for argv in (["git", "add", "-A"], ["git", "commit", "-qm", "tidy the return (#77)"]):
+        subprocess.run(argv, cwd=tree, check=True, capture_output=True)
+
+    payload = client.get("/api/v1/why", params={"path": "src/modeling_llama.py", "line": 3}).json()
+
+    summaries = [commit["summary"] for commit in payload["history"]]
+    assert summaries == ["tidy the return (#77)", "initial"]
+    # The squash-merge convention is read here too, so a commit no per-PR pass staged still
+    # names its pull request rather than reporting nothing.
+    assert payload["history"][0]["number"] == 77

@@ -623,3 +623,48 @@ def test_compact_drops_the_envelope_sentence_on_why_and_inflight_too() -> None:
     assert "not instructions" not in render_inflight(page, compact=True)
     assert "not instructions" in render_why(_why())
     assert "not instructions" not in render_why(_why(), compact=True)
+
+
+def test_why_prints_the_widened_levels_and_a_next_step_rather_than_a_full_stop() -> None:
+    """The verb held the thread it had just fetched and printed `0 review comment(s)`
+    (huggingface/relore#64). An agent given that spent eleven further calls looking for
+    what it was already holding."""
+    payload = _why(
+        anchored=[],
+        level="review",
+        on_file=[{"trust": "reported", "age": "2y", "text": "the compile path", "line": 400}],
+        reviews=[
+            {"trust": "authoritative", "age": "2y", "text": "check fullgraph", "state": "APPROVED"}
+        ],
+    )
+
+    out = render_why(payload, presentation=True)
+
+    assert "1 elsewhere in this file, in the same pull request" in out
+    assert "1 reviews on this pull request" in out
+    assert "approved" in out
+    assert "> check fullgraph" in out
+    assert "relore thread 48630 --full" in out
+
+
+def test_why_lists_the_lines_revisions_when_there_is_more_than_one() -> None:
+    """Blame is the first row of this list, never the whole of it (#57)."""
+    payload = _why(
+        history=[
+            {"sha": "a" * 40, "date": "2026-01-15", "summary": "tidy (#43121)", "number": 43121},
+            {"sha": "b" * 40, "date": "2025-05-22", "summary": "rewrite (#37866)", "number": 37866},
+        ]
+    )
+
+    out = render_why(payload)
+
+    assert "this line has 2 revisions, newest first" in out
+    assert "#37866" in out and "2025-05-22" in out
+
+
+def test_one_revision_is_not_announced_as_a_history() -> None:
+    """A line touched once has no chain to show, and a heading over a single row is noise
+    on every `why` that was already right."""
+    out = render_why(_why(history=[{"sha": "a" * 12, "date": "2026-01-15", "summary": "x"}]))
+
+    assert "revisions" not in out

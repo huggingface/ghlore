@@ -404,12 +404,29 @@ Anchors are matched within a window of lines rather than exactly: GitHub stores 
 as a name and we store a line number, so an exact match would drop every comment on a file
 edited since.
 
+**The line's revisions, not only its last one (#57).** Blame names the commit that touched
+the line last, which on a reformatted line is a tidy-up standing in front of the pull
+request that decided anything. The page lists the chain — `git log -L` over the *enclosing
+definition*, so a line that moved inside its function is still tracked — with each revision
+resolved to its pull request. Measured on `transformers`: blame of `generation/utils.py`
+names #43121, a later refactor; the behaviour was argued in #37866. What the chain does not
+follow is a line deleted and reintroduced elsewhere — that is a question for `-S` and a term
+to pickaxe on, which is a judgement it will not make for you.
+
+**When the line window is empty, it widens rather than stopping (#63, #64).** In order,
+labelled, so a widened answer is never read as an exact one: comments on the line →
+comments on this file elsewhere in the same pull request → the pull request's **review
+bodies**. That last group has no line anchor at all, so no window could have reached it, and
+it is where an approval states its conditions — `transformers`#37866's approving review
+("make sure full graph training is not broken… or at least fa2 training") is the reason the
+line under it exists.
+
 Two empty answers that are not the same, and the page says which:
 
 - **no pull request carries that commit** — it predates the index, or reached the branch
   outside a pull request;
-- **a pull request, and nobody reviewed this line** — the argument exists, just not here;
-  `relore thread` reads the rest of it.
+- **a pull request, and nothing said at any level** — the page names the next command
+  (`relore thread <n> --full`) rather than ending on a count of zero.
 
 `why` needs the working clone below, because blame does. A `--depth 200` clone can read a
 file and cannot attribute a line, which is the hole every cost-minimising agent falls into.
@@ -553,7 +570,7 @@ tells you which — that distinction is deliberate (§12).
 
 ```
 $ relore status
-version   0.3.10
+version   0.3.11
 backend   postgresql / ts_rank_cd  capabilities: fulltext, weighted
 schema    applied [1, 2, 3, 4, 5, 6, 7], pending []
 index     55168 threads, 517276 documents, 332 raw objects

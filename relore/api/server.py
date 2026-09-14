@@ -43,7 +43,7 @@ from relore.api.schemas import (
     why_json,
 )
 from relore.api.tokens import LABEL_SCOPE, Authenticator, AuthError, RateLimited, Token
-from relore.code.blame import blame_line
+from relore.code.blame import blame_line, line_history
 from relore.code.clone import CloneUnavailable, WorkingClones
 from relore.code.defs import definitions
 from relore.code.refresh import REFRESH_ENV, start_refresh
@@ -344,6 +344,31 @@ def build_app(
         except CloneUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from None
 
+    def _enclosing_span(root: str, path: str, line: int) -> tuple[int, int]:
+        """The definition ``line`` sits in, as a range, or the line itself.
+
+        Degrades in one direction only: every failure -- no parser for the language, no
+        extents from the provider, a line inside no definition -- returns the bare line,
+        which is what this verb did before. A range is an improvement to reach for, never
+        a dependency, because `14.4(b)` holds here too: the lens may be absent and the
+        answer must still be the old answer rather than an error.
+        """
+        source = read(str(Path(root) / path))
+        if source is None:
+            return line, line
+        try:
+            found = [
+                d
+                for d in definitions(path, source)
+                if d.end_line is not None and d.start_line <= line <= d.end_line
+            ]
+        except Exception:
+            return line, line
+        if not found:
+            return line, line
+        innermost = max(found, key=lambda d: d.start_line)
+        return innermost.start_line, int(innermost.end_line or line)
+
     @app.get("/api/v1/code/defs")
     def code_defs(token: Caller, path: str, repo: str | None = None) -> Response:
         name, root = _clone_root(token, repo)
@@ -480,7 +505,18 @@ def build_app(
                 status_code=404,
                 detail=f"{path}:{line} is not in {name} at HEAD, so blame has nothing to read",
             )
-        view = deps.backend.why(name, path, line, sha=found.sha, summary=found.summary)
+        # The enclosing definition, not the bare line: a line moves inside its function on
+        # every reformat, and the chain that tracks a one-line range ends at the first one
+        # (relore#57). Falls back to the line where nothing can parse the file.
+        start, end = _enclosing_span(root, path, line)
+        view = deps.backend.why(
+            name,
+            path,
+            line,
+            sha=found.sha,
+            summary=found.summary,
+            history=line_history(root, path, start, end),
+        )
         payload = {"notice": NOTICE, **why_json(view, blame=found)}
         return _json(
             payload,

@@ -205,6 +205,14 @@ def why_json(view: WhyView, *, blame: Any) -> dict[str, Any]:
         "resolved_by": view.resolved_by,
         "thread": thread_json(view.thread) if view.thread else None,
         "anchored": [dict(comment) for comment in view.anchored],
+        # The widening, and what it reached (relore#63, #64). Separate keys rather than one
+        # merged list: a comment forty lines away and an approval on the pull request are
+        # both evidence and are not the same claim, and a caller merging them cannot say
+        # which it read.
+        "on_file": [dict(comment) for comment in view.on_file],
+        "reviews": [dict(review) for review in view.reviews],
+        "level": view.level,
+        "history": [dict(commit) for commit in view.history],
     }
 
 

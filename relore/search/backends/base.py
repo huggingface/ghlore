@@ -23,6 +23,7 @@ from __future__ import annotations
 import operator
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from functools import reduce
 from typing import Any
 
@@ -577,6 +578,7 @@ class SearchBackend(ABC):
         sha: str,
         summary: str = "",
         window: int = 25,
+        history: Sequence[Any] = (),
     ) -> WhyView:
         """What the index knows about the commit blame named, and about this line.
 
@@ -589,7 +591,13 @@ class SearchBackend(ABC):
         The anchor is a *name* in GitHub's payload and a line number in ours, so an exact
         match would silently drop every comment written against a since-edited file --
         which is most of them.
+
+        ``history`` is the line's revision chain, resolved to pull requests here because
+        the caller has the clone and this has the index (relore#57). Blame names the last
+        commit, which on a reformatted line is a cosmetic pull request standing in front of
+        the one that argued the behaviour.
         """
+        shas = [str(commit.sha) for commit in history]
         with self.engine.connect() as conn:
             row = conn.execute(
                 select(s.threads.c.github_number, s.threads.c.title)
@@ -599,10 +607,25 @@ class SearchBackend(ABC):
                 .where(s.threads.c.repo == repo, s.thread_commits.c.sha.like(f"{sha[:12]}%"))
                 .limit(1)
             ).one_or_none()
+            resolved = _threads_for_shas(conn, repo, shas)
+            chain = tuple(
+                {
+                    "sha": commit.sha,
+                    "date": commit.date,
+                    "summary": commit.summary,
+                    **(
+                        resolved.get(str(commit.sha))
+                        or {"number": _number_from_summary(str(commit.summary))}
+                    ),
+                }
+                for commit in history
+            )
             number = int(row.github_number) if row else _number_from_summary(summary)
             if number is None:
-                return WhyView(repo=repo, path=path, line=line, sha=sha, summary=summary)
-            anchored = tuple(_anchored(conn, number, path, line, window))
+                return WhyView(
+                    repo=repo, path=path, line=line, sha=sha, summary=summary, history=chain
+                )
+            at_line, on_file, reviews, level = _argument(conn, number, path, line, window)
         return WhyView(
             repo=repo,
             path=path,
@@ -612,7 +635,11 @@ class SearchBackend(ABC):
             number=number,
             resolved_by="commit" if row else "summary",
             thread=self.thread(repo, number),
-            anchored=anchored,
+            anchored=tuple(at_line),
+            on_file=tuple(on_file),
+            reviews=tuple(reviews),
+            level=level,
+            history=chain,
         )
 
     # -- what is already being worked on ---------------------------------
@@ -872,12 +899,26 @@ def _number_from_summary(summary: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _anchored(conn: Any, number: int, path: str, line: int, window: int) -> list[dict[str, Any]]:
-    """Review comments hanging on this file within ``window`` lines of the anchor.
+def _argument(
+    conn: Any, number: int, path: str, line: int, window: int
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], str]:
+    """What was said about this line, widening until something answers (relore#64).
+
+    Three groups and the level that carried the answer, because ``0 comments on this line``
+    is a fact about a *window* and reads as a fact about the line. Measured: the line this
+    was written for has no anchored comment in `transformers`#43121 and its whole argument
+    one level up, and the verb's full stop cost an agent eleven further calls.
+
+    * **line** -- review comments within ``window`` lines of the anchor. What it always did.
+    * **file** -- review comments on the same path, further away. Still about this code.
+    * **review** -- the pull request's review *bodies* (relore#63). These carry no line
+      anchor at all, so no widening of a line window could ever have reached them, and they
+      are where an approval states its conditions: `transformers`#37866's approving review
+      is the whole reason the line under it exists.
 
     Filtered in Python rather than in SQL: the anchor lives in ``documents.metadata``, and
     reaching into JSON is the one thing ``test_no_dialect_leak`` forbids the store from
-    doing. A thread's review comments are tens of rows, so the cost is nothing.
+    doing. A thread's review rows are tens of rows, so the cost is nothing.
     """
     rows = conn.execute(
         select(
@@ -887,33 +928,82 @@ def _anchored(conn: Any, number: int, path: str, line: int, window: int) -> list
             s.documents.c.body_text,
             s.documents.c.metadata,
             s.documents.c.github_created_at,
+            s.documents.c.source_type,
         )
         .select_from(s.documents.join(s.threads, s.documents.c.thread_id == s.threads.c.id))
         .where(
             s.threads.c.github_number == number,
-            s.documents.c.source_type == "review_comment",
+            s.documents.c.source_type.in_(("review_comment", "review")),
         )
     ).all()
 
-    out = []
+    at_line: list[dict[str, Any]] = []
+    on_file: list[dict[str, Any]] = []
+    reviews: list[dict[str, Any]] = []
     for row in rows:
         meta = row._mapping["metadata"] or {}
+        entry = {
+            "author": row.author,
+            "trust": row.trust,
+            "url": row.url,
+            "line": None,
+            "age": render_age(row.github_created_at),
+            "text": row.body_text,
+        }
+        if row.source_type == "review":
+            # A review body is the verdict, not a remark on a line: its state is what makes
+            # "approved, on condition that…" different from a passing thought.
+            entry["state"] = meta.get("state")
+            reviews.append(entry)
+            continue
         if meta.get("path") != path:
             continue
         anchor = meta.get("line") or meta.get("original_line")
+        entry["line"] = anchor
         if anchor is not None and abs(int(anchor) - line) > window:
-            continue
-        out.append(
-            {
-                "author": row.author,
-                "trust": row.trust,
-                "url": row.url,
-                "line": anchor,
-                "age": render_age(row.github_created_at),
-                "text": row.body_text,
-            }
+            on_file.append(entry)
+        else:
+            at_line.append(entry)
+
+    level = "line" if at_line else "file" if on_file else "review" if reviews else "none"
+    return at_line, on_file, reviews, level
+
+
+def _threads_for_shas(conn: Any, repo: str, shas: Sequence[str]) -> dict[str, dict[str, Any]]:
+    """Resolve each sha to the pull request that carried it, for the line's history.
+
+    One query for the whole chain: a `git log -L` walk is a handful of commits and a
+    round trip each would make the widening cost more than the dead end it replaces.
+    """
+    if not shas:
+        return {}
+    rows = conn.execute(
+        select(
+            s.thread_commits.c.sha,
+            s.threads.c.github_number,
+            s.threads.c.title,
+            s.threads.c.url,
+            s.threads.c.state,
         )
-    return out
+        .select_from(
+            s.thread_commits.join(s.threads, s.thread_commits.c.thread_id == s.threads.c.id)
+        )
+        .where(
+            s.threads.c.repo == repo,
+            or_(*[s.thread_commits.c.sha.like(f"{sha[:12]}%") for sha in shas]),
+        )
+    ).all()
+    found: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        for sha in shas:
+            if row.sha.startswith(sha[:12]):
+                found[sha] = {
+                    "number": int(row.github_number),
+                    "title": row.title,
+                    "url": row.url,
+                    "state": row.state,
+                }
+    return found
 
 
 def _files_by_provenance(conn: Any, thread_id: int) -> dict[str, tuple[str, ...]]:

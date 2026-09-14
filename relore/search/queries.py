@@ -323,6 +323,18 @@ class WhyView:
     #: The part `git blame` cannot give: what reviewers said *on this line* while it was
     #: being written.
     anchored: tuple[dict[str, Any], ...] = ()
+    #: Review comments on the same file, outside the line window. One level out, and the
+    #: difference between "nobody discussed this line" and "nobody discussed this code".
+    on_file: tuple[dict[str, Any], ...] = ()
+    #: The pull request's review *bodies* (relore#63). No line anchor exists on these, so
+    #: no widening of a window reaches them -- and an approval's conditions live here.
+    reviews: tuple[dict[str, Any], ...] = ()
+    #: Which of the three carried the answer: ``line``, ``file``, ``review`` or ``none``.
+    #: A caller that cannot tell reads a widened answer as an exact one (relore#64).
+    level: str = "none"
+    #: The line's revision chain, newest first, each resolved to its pull request where the
+    #: index holds one (relore#57). ``blame`` is this chain's first entry, never its whole.
+    history: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
