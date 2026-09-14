@@ -41,7 +41,7 @@ from typing import Any, Protocol
 from sqlalchemy import Connection, Engine, select
 
 from relore.bench.dataset import Dataset, Example
-from relore.search import MAX_HITS, SearchQuery, open_backend, search_expanded
+from relore.search import MAX_HITS, SearchQuery, open_backend, search_best
 from relore.store import schema as s
 
 #: Section 10 asks for Recall@5, Recall@10 and MRR. Ten is also ``MAX_HITS`` -- the cap is
@@ -228,7 +228,12 @@ class IndexSystem:
             tests=example.tests,
             limit=MAX_HITS,
         )
-        hits = search_expanded(self.backend, query) if self.expand else self.backend.search(query)
+        # `search_best`, not `search_expanded`: the system scored here has to be the system
+        # the API serves, or the number describes something nobody runs. The widening it
+        # adds is reachable only from an empty page, and neither frozen set has one (both
+        # report `empty 0`), so it cannot move either score -- which is the point. What it
+        # would catch is a future set that *does* contain an empty row.
+        hits, _widened = search_best(self.backend, query, expand=self.expand)
         return _dedupe((hit.repo, hit.number) for hit in hits), ""
 
 

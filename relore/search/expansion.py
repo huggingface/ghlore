@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING
 
 from relore.ingest.extract import extract_signals, is_symbol
 from relore.search.queries import (
+    MATCH_ANY,
     MAX_HITS,
     MAX_HITS_PER_THREAD,
     Hit,
@@ -76,6 +77,14 @@ RRF_K = 60
 #: The legs, in section 6's order. Order is the tie-break when two hits fuse equal, so it
 #: is the one place a leg is preferred over another -- and the caller's own text wins.
 LEG_NAMES = ("text", "error", "test", "symbol", "file", "filters")
+
+#: What :func:`search_best` reports when it had to widen. One value today, and a name
+#: rather than a boolean so a second rung can be added without changing the field.
+WIDENED_ANY_TERM = "any-term"
+
+#: The shortest query worth widening. One term already *is* its own disjunction, so
+#: widening it can only return the same page under a different name.
+MIN_WIDEN_TERMS = 2
 
 
 @dataclass(frozen=True)
@@ -283,3 +292,44 @@ def _dedupe_legs(legs: Sequence[Leg]) -> list[Leg]:
         seen.add(key)
         out.append(leg)
     return out
+
+
+def search_best(
+    backend: SearchBackend, query: SearchQuery, *, expand: bool = True
+) -> tuple[list[Hit], str]:
+    """Section 6's search, asked so that a query with terms in it never dead-ends.
+
+    **The measured problem.** Expansion fixed the pasted *traceback* -- a signal leg
+    reaches the thread the AND could not. It does nothing for pasted *prose*, because
+    prose derives no signals: :func:`expand` returns the caller's own leg alone and the
+    conjunction is the whole call. Across the three head-to-head runs in
+    ``relore/docs/gh-vs-relore-2026-09-14.md`` every zero-result page had that shape --
+    six to nine ordinary words, no error, no path, no identifier --
+
+        search 'FA2 static cache fullgraph compile generate override'   -> 0 hits
+
+    where dropping half the terms answers at rank 1. And a zero costs a *turn*: the agent
+    reformulates, the whole conversation is re-sent, ~59k prompt tokens for a page that
+    said nothing. That is the same cost the ``why`` dead end had (section 13.3) and the
+    same shape :meth:`~relore.search.backends.base.SearchBackend._focused` fixed inside
+    one thread -- here it is the last place the empty page survived.
+
+    **So: ask again with the terms disjoined, and only then.** The strict conjunction runs
+    first and unchanged, so no query that had an answer can be widened out of one; the
+    widening is reached only from an empty page, where there is nothing to lose. The score
+    keeps all-terms rows first (both backends), so what widening adds is a tail rather
+    than a reshuffle.
+
+    **It is disclosed, always.** The second return value is what the page says it did, and
+    it is set whenever widening was *tried* -- including when it also came back empty,
+    which is the more useful of the two answers: it tells the caller their words are not
+    the problem and reformulating them again will not help.
+    """
+
+    def ask(asked: SearchQuery) -> list[Hit]:
+        return search_expanded(backend, asked) if expand else backend.search(asked)
+
+    hits = ask(query)
+    if hits or len(tokenize(query.text)) < MIN_WIDEN_TERMS:
+        return hits, ""
+    return ask(replace(query, match=MATCH_ANY)), WIDENED_ANY_TERM

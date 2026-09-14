@@ -75,11 +75,40 @@ biggest cause of a disappointing result:
 | `429` | 3 |
 | `timeout budget` | 2 |
 | `rate limit` | 4 |
-| `crash when the optional mask is missing` | **0** |
+| `crash when the optional mask is missing` | 10, **widened** |
 
-Two or three distinctive terms, not a sentence — that table is what one AND-ed sentence
-costs you. The AND is not a setting: this is a lexical index, and
-[`how-search-works.md`](how-search-works.md) is why.
+Two or three distinctive terms, not a sentence. The AND is not a setting: this is a lexical
+index, and [`how-search-works.md`](how-search-works.md) is why.
+
+**A sentence no longer dead-ends, and the page tells you when that happened.** When every
+term ANDs to nothing, the same terms are asked again disjoined, and the page opens with
+
+```
+10 hits for 'crash when the optional mask is missing'
+widened: nothing carried every term, so these carry some of them — most of the query first.
+```
+
+Read it as what it says. These results carry *part* of your question — on Postgres they are
+ordered by how much of it, distinct terms first and word-frequency only as a tie-break — so
+the top hit may carry five of your seven terms and the tenth may carry two. It is a
+starting point, not an answer, and two or three distinctive terms still beat it. The
+widening runs **only** from an empty page, so a query that found something is never
+reordered by it.
+
+If even that is empty you get the other useful sentence, which is your cue to stop
+rewording and change the filters instead:
+
+```
+0 hits for 'crash when the optional mask is missing'
+filters: --kind failure, --error RuntimeError [normalized]   (they AND)
+nothing matched, with every term or with any of them.
+```
+
+An empty page always echoes the filters that produced it. That matters more than it sounds:
+a *correct* `--error` read off your own traceback can zero a query that answers at rank 1
+without it, and with only the query text on the page that reads as "nobody has ever reported
+this" rather than "you asked one question too many". `--error` is echoed in §5.3's normal
+form — what it actually filtered on, which is rarely what you typed.
 
 **A pasted traceback is the exception, and it used to be the worst case.** §6's query
 expansion now fans one call out into capped error, test-id, symbol, file and free-text
@@ -585,7 +614,7 @@ tells you which — that distinction is deliberate (§12).
 
 ```
 $ relore status
-version   0.3.12
+version   0.3.13
 backend   postgresql / ts_rank_cd  capabilities: fulltext, weighted
 schema    applied [1, 2, 3, 4, 5, 6, 7], pending []
 index     55168 threads, 517276 documents, 332 raw objects

@@ -11,8 +11,11 @@ index and it is not grep.
 - Prose is **Postgres full-text**: `to_tsvector('english', …)` with a GIN index, queried
   with `plainto_tsquery` and ranked by `ts_rank_cd`. It **stems** — searching `load` finds
   "loading" — and it **ranks**. It does not match substrings and it does not match meaning.
-- A query is an **AND of every content term**. `optional mask dtype` works; `crash when the
-  optional mask is missing` returns nothing. Two or three distinctive terms, not a sentence.
+- A query is an **AND of every content term**. `optional mask dtype` works; two or three
+  distinctive terms, not a sentence. A sentence that ANDs to nothing is **asked again with
+  the terms disjoined, ranked by how many of them each document carries** — so it comes back
+  with something and says on the page that it widened. That is a starting point, not an
+  answer, and it runs only from an empty page.
 - **Errors, test ids, symbols, file paths and labels are extracted from the prose at ingest
   and matched exactly** as filters. `--error` is the one fuzzy case: a containment test
   against a *normalized* form, so a pasted traceback whose numbers differ still matches.
@@ -31,7 +34,7 @@ The daemon says which of these it can do rather than asking you to trust a docum
 
 ```
 $ relore status
-version      0.3.12
+version      0.3.13
 backend      postgresql / ts_rank_cd  capabilities: fulltext, weighted
 ```
 

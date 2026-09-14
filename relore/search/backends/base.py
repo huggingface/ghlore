@@ -47,6 +47,7 @@ from relore.search.queries import (
     ENDS_AND_MIDDLE,
     HUMAN_TRUST,
     MACHINE_TRUST,
+    MATCH_ALL,
     MAX_BODY_CHARS,
     MAX_CLAIMS,
     MAX_HITS_PER_THREAD,
@@ -87,12 +88,26 @@ class SearchBackend(ABC):
     def info(self) -> BackendInfo: ...
 
     @abstractmethod
-    def fts_score(self, text: str) -> Any:
-        """A column expression: higher is more relevant."""
+    def fts_score(self, text: str, *, match: str = MATCH_ALL) -> Any:
+        """A column expression: higher is more relevant.
+
+        ``match`` is the *admission* question the score is ordering the answers to, and
+        under :data:`~relore.search.queries.MATCH_ANY` the two stop agreeing: a row that
+        carries two of seven terms is on the page, and the conjunction scores it 0 along
+        with every other partial row. So a widened score has to be graded, and both
+        backends fold the disjunction in -- which is the same correction
+        :meth:`unfiltered_fts_score` documents for a different reason.
+        """
 
     @abstractmethod
-    def fts_filter(self, stmt: Select, text: str) -> Select:
-        """Narrow ``stmt`` to rows matching ``text``, adding whatever join that needs."""
+    def fts_filter(self, stmt: Select, text: str, *, match: str = MATCH_ALL) -> Select:
+        """Narrow ``stmt`` to rows matching ``text``, adding whatever join that needs.
+
+        ``match`` chooses the connective: :data:`~relore.search.queries.MATCH_ALL` is the
+        conjunction every corpus-wide search is asked with, and
+        :data:`~relore.search.queries.MATCH_ANY` is the widening the fallback asks for
+        after it came back empty.
+        """
 
     @abstractmethod
     def unfiltered_fts_score(self, text: str) -> Any | None:
@@ -223,7 +238,7 @@ class SearchBackend(ABC):
             .where(*self._filters(query))
         )
         if filtering_on_text:
-            stmt = self.fts_filter(stmt, query.text)
+            stmt = self.fts_filter(stmt, query.text, match=query.match)
         rows = stmt.subquery("scored")
 
         chunks = select(
@@ -337,7 +352,7 @@ class SearchBackend(ABC):
         :meth:`unfiltered_fts_score` answers.
         """
         if query.text.strip():
-            return self.fts_score(query.text)
+            return self.fts_score(query.text, match=query.match)
         if spec.text.strip():
             return self.unfiltered_fts_score(spec.text)
         return None

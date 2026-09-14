@@ -41,6 +41,19 @@ TRUST_LABEL = {
 #: and ``test_render`` pins the two together so they cannot drift.
 COMPACT_CHARS = 160
 
+#: The flag each signal filter was spelled as on the command line. A zero page echoes
+#: them, because the caller's own `--error` is a *correct* fact about their bug that can
+#: still zero a query answering at rank 1 without it (huggingface/relore#47) -- and with
+#: only the query text on the page, that reads as an absence in the corpus rather than as
+#: a property of the question.
+FILTER_FLAG = {
+    "files": "--file",
+    "symbols": "--symbol",
+    "errors": "--error",
+    "tests": "--test",
+    "labels": "--label",
+}
+
 
 def trim(text: str, *, limit: int = COMPACT_CHARS) -> tuple[str, bool]:
     """One line of prose, shortened for ``--compact``, and whether it was.
@@ -75,8 +88,25 @@ def render_search(
     if floor and floor != ["reported", "authoritative"]:
         # A raised floor and a quiet corpus produce the same empty page, so say which.
         header.append(f"trust floor: {', '.join(floor)}")
+    widened = str(query.get("widened") or "")
+    if widened and hits:
+        # Never silent: the page in front of the caller is not the page they asked for,
+        # and a hit that carries two terms of seven has to be read as one (section 6).
+        header.append(
+            "widened: nothing carried every term, so these carry some of them — "
+            "most of the query first."
+        )
     if not hits:
-        header.append("nothing matched.")
+        applied = _filters_applied(query)
+        if applied:
+            header.append(f"filters: {', '.join(applied)}   (they AND)")
+        header.append(
+            # Widening already asked the cheaper question. Saying so is what stops the
+            # next turn being another reformulation of the same words.
+            "nothing matched, with every term or with any of them."
+            if widened
+            else "nothing matched."
+        )
     untested = int(payload.get("files_untested") or 0)
     if untested:
         # A `--file` page is read as "these are the threads that touched it". Threads with
@@ -92,6 +122,27 @@ def render_search(
     for index, hit in enumerate(hits, start=1):
         body += _hit_lines(index, hit, note=_passage_note(hit, hits))
     return envelope("\n".join(body).rstrip(), compact=compact)
+
+
+def _filters_applied(query: dict[str, Any]) -> list[str]:
+    """Every filter but the text, spelled the way the caller passed it. See :data:`FILTER_FLAG`."""
+    filters = query.get("filters") or {}
+    applied = [f"--kind {query['kind']}"] if query.get("kind") else []
+    for name, flag in FILTER_FLAG.items():
+        # `--error` is echoed in section 5.3's normal form, which is what it actually
+        # filtered on and is rarely what was typed -- `RuntimeError: nope` filters as
+        # `nope`. Echoing the input instead would hide the one transformation on this
+        # page that can produce a surprising zero all by itself.
+        note = " [normalized]" if name == "errors" else ""
+        applied += [f"{flag} {value}{note}" for value in filters.get(name) or []]
+    if query.get("since"):
+        applied.append(f"--since {query['since']}")
+    repos = query.get("repos")
+    # An empty scope is the one that means *nothing is searchable*, and it is section 11
+    # failing closed rather than a quiet corpus (server.py says the same of the field).
+    if repos is not None and not repos:
+        applied.append("no repository in scope")
+    return applied
 
 
 def _hit_lines(index: int, hit: dict[str, Any], note: str = "") -> list[str]:

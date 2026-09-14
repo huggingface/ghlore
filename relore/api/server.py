@@ -52,7 +52,7 @@ from relore.code.survey import copies, grep, symbol_body
 from relore.code.walk import read
 from relore.duration import parse_interval
 from relore.render import render_inflight, render_search, render_thread, render_why
-from relore.search import QueryError, SearchQuery, expand, open_backend, search_expanded
+from relore.search import QueryError, SearchQuery, expand, open_backend, search_best
 from relore.search.queries import HUMAN_TRUST, admissible_trust
 from relore.security.untrusted import NOTICE, scrub_tree
 from relore.store import schema as s
@@ -208,7 +208,7 @@ def build_app(
         except QueryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
         legs = expand(query) if body.expand else ()
-        hits = search_expanded(deps.backend, query) if body.expand else deps.backend.search(query)
+        hits, widened = search_best(deps.backend, query, expand=body.expand)
         payload = {
             "notice": NOTICE,
             "backend": deps.backend.info().as_dict(),
@@ -228,6 +228,26 @@ def build_app(
                 # asked is not the string the caller sent, and an empty result is only
                 # diagnosable if the legs are visible (section 6).
                 "legs": [{"leg": leg.name, "term": leg.term} for leg in legs],
+                # The filters that were also applied, echoed because a zero page is
+                # otherwise indistinguishable from an absence: a *correct* `--error` can
+                # zero a query that answers at rank 1 without it (huggingface/relore#47),
+                # and the caller reading the page has no evidence which happened.
+                "filters": {
+                    name: list(values)
+                    for name, values in (
+                        ("files", query.files),
+                        ("symbols", query.symbols),
+                        ("errors", query.errors),
+                        ("tests", query.tests),
+                        ("labels", query.labels),
+                    )
+                    if values
+                },
+                "since": query.since.isoformat() if query.since else None,
+                # Empty unless the strict conjunction came back with nothing and the call
+                # was asked again with the terms disjoined (section 6). Set even when the
+                # widened page is *also* empty: that is the answer that saves a turn.
+                "widened": widened,
             },
             "count": len(hits),
             # Threads this query otherwise matched that have no collected changed-file

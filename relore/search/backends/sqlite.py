@@ -30,7 +30,7 @@ from sqlalchemy import Select, func, literal, literal_column, table
 from sqlalchemy import text as sa_text
 
 from relore.search.backends.base import SearchBackend
-from relore.search.queries import BackendInfo, tokenize
+from relore.search.queries import MATCH_ALL, MATCH_ANY, BackendInfo, tokenize
 from relore.store import schema as s
 
 #: Created by migration 3, external-content over ``documents``, and deliberately not in
@@ -48,13 +48,21 @@ class SqliteBackend(SearchBackend):
             name="sqlite", ranking="bm25", capabilities=frozenset({"fulltext", "weighted"})
         )
 
-    def fts_score(self, text: str) -> Any:
-        if not _match_expression(text):
+    def fts_score(self, text: str, *, match: str = MATCH_ALL) -> Any:
+        """``bm25`` either way, and under :data:`MATCH_ANY` it is already the graded score.
+
+        The Postgres side has to *add* a disjunction to keep a widened page ordered (see
+        that backend); here the widened MATCH is itself the disjunction, and bm25 over it
+        scores a row carrying four of the terms above one carrying two. The two engines
+        order a widened page by different numbers, which section 4.1 already says of every
+        number here.
+        """
+        if not _match_expression(text, match=match):
             return literal(0.0)
         return -_BM25
 
-    def fts_filter(self, stmt: Select, text: str) -> Select:
-        expression = _match_expression(text)
+    def fts_filter(self, stmt: Select, text: str, *, match: str = MATCH_ALL) -> Select:
+        expression = _match_expression(text, match=match)
         if not expression:
             # Every term was punctuation. An empty MATCH is a syntax error in FTS5, and
             # "no results" is the honest answer, so ask for a contradiction rather than
@@ -74,10 +82,15 @@ class SqliteBackend(SearchBackend):
         return func.julianday(literal("now")) - func.julianday(column)
 
 
-def _match_expression(query: str) -> str:
+def _match_expression(query: str, *, match: str = MATCH_ALL) -> str:
     """User text as an FTS5 ``MATCH`` expression: every term quoted, implicitly ANDed.
 
     Quoting is what neutralizes the query language, so a pasted traceback searches for its
     own words instead of erroring on its own punctuation.
+
+    Under :data:`~relore.search.queries.MATCH_ANY` the terms are joined by an explicit
+    ``OR`` -- the one place this module *uses* the query language instead of neutralizing
+    it. The terms stay quoted, so that connective is the only operator in the expression.
     """
-    return " ".join(f'"{term}"' for term in tokenize(query))
+    terms = [f'"{term}"' for term in tokenize(query)]
+    return (" OR " if match == MATCH_ANY else " ").join(terms)

@@ -15,7 +15,7 @@ textless expansion leg scored every row 0.
 from __future__ import annotations
 
 from relore.search.backends import SearchBackend, open_backend
-from relore.search.expansion import Leg, expand, search_expanded
+from relore.search.expansion import WIDENED_ANY_TERM, Leg, expand, search_best, search_expanded
 from relore.search.queries import (
     MAX_HITS,
     MAX_SNIPPET_CHARS,
@@ -43,11 +43,13 @@ __all__ = [
     "SearchQuery",
     "ThreadView",
     "WEIGHTS",
+    "WIDENED_ANY_TERM",
     "Weights",
     "decay",
     "expand",
     "half_life",
     "open_backend",
     "render_age",
+    "search_best",
     "search_expanded",
 ]

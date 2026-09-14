@@ -103,6 +103,64 @@ def test_the_untested_count_is_zero_without_a_file_filter(
     assert _search(client, query="crash")["files_untested"] == 0
 
 
+# -- the widening ----------------------------------------------------------
+
+
+def test_a_prose_query_that_ands_to_nothing_comes_back_widened(
+    engine: Engine, fake: FakeGitHub, client: TestClient
+) -> None:
+    """Section 6's fallback, through the endpoint that serves it. The page is not empty and
+    it says why it is not the page that was asked for."""
+    fake.add_issue(1, body="static cache is not compatible with fullgraph compile here")
+    _index(engine, fake, 1)
+
+    payload = _search(client, query="FA2 static cache fullgraph compile generate override")
+
+    assert payload["count"] == 1
+    assert payload["query"]["widened"] == "any-term"
+    assert "nothing carried every term" in render_search(payload)
+
+
+def test_a_page_that_answered_is_not_marked_widened(
+    engine: Engine, fake: FakeGitHub, client: TestClient
+) -> None:
+    fake.add_issue(1, body="a crash in the decoder")
+    _index(engine, fake, 1)
+
+    assert _search(client, query="crash decoder")["query"]["widened"] == ""
+
+
+def test_an_empty_page_carries_the_filters_that_produced_it(
+    engine: Engine, fake: FakeGitHub, client: TestClient
+) -> None:
+    """huggingface/relore#47. The caller knows what it passed; the *agent reading the page*
+    has no evidence that filtering rather than absence is what produced the zero."""
+    fake.add_issue(1, body="a crash in the decoder")
+    _index(engine, fake, 1)
+
+    payload = _search(client, query="crash decoder", errors=["RuntimeError: boom"], labels=["bug"])
+
+    assert payload["count"] == 0
+    assert payload["query"]["filters"]["labels"] == ["bug"]
+    assert payload["query"]["filters"]["errors"]
+    rendered = render_search(payload)
+    assert "--label bug" in rendered
+    assert "--error " in rendered
+
+
+def test_a_page_that_used_no_filters_carries_none(
+    engine: Engine, fake: FakeGitHub, client: TestClient
+) -> None:
+    """Empty rather than a map of empty lists: the field is read as "these applied"."""
+    fake.add_issue(1, body="a crash in the decoder")
+    _index(engine, fake, 1)
+
+    payload = _search(client, query="crash decoder")
+
+    assert payload["query"]["filters"] == {}
+    assert payload["query"]["since"] is None
+
+
 # -- the envelope ----------------------------------------------------------
 
 

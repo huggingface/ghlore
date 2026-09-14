@@ -527,6 +527,21 @@ tells the two apart and says which), and `relore map` with no provider installed
 walk zero files and return an empty map at exit 0 — a missing install wearing a real
 answer, which is what `registry.require_any` exists for.
 
+**An empty page is a turn spent saying nothing, everywhere it can still happen.** Three
+fixes, one rule. Inside a thread `--focus` now orders and never selects (below). Corpus-wide,
+a prose query whose terms AND to nothing is asked again with them **disjoined** and the page
+says it widened (`search_best`, `relore/search/expansion.py`) — measured: every zero-result
+page across three head-to-head runs was six to nine ordinary words, and each one cost a full
+turn (~59k prompt tokens) to reformulate. Two invariants hold it in place: the strict
+conjunction runs **first**, so nothing that answered can be widened out of an answer, and
+the widening is **always disclosed**, including when it is also empty — which is the more
+useful answer, because it says the caller's words are not the problem. And a zero page now
+**echoes its filters** (#47): a correct `--error` off your own traceback can zero a query
+that answers at rank 1 without it, and with only the query text on the page that reads as an
+absence in the corpus. Ranking a widened page is its own trap — see §10.6 above, then
+`PostgresBackend.fts_score`: cover density puts a document repeating one term above one
+carrying six of your seven, so coverage decides and density only breaks ties.
+
 **A filter inside an already-selected unit is not a filter.** `thread --focus` scored a
 conjunction and *selected* on it, which is right for corpus-wide `search` — the AND is
 what stops a pasted sentence matching everything — and wrong inside one thread, where the

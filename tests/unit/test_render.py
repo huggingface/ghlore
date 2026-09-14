@@ -423,6 +423,77 @@ def test_no_hits_is_a_sentence_not_an_empty_page() -> None:
     assert "nothing matched" in out
 
 
+def test_a_widened_page_says_it_was_widened() -> None:
+    """The page in front of the caller is not the page they asked for: a hit carrying two
+    terms of seven has to be read as one, and silence would let it read as a whole match."""
+    out = render_search(
+        {"query": {"text": "a b c", "widened": "any-term"}, "hits": [{"repo": "o/n", "number": 1}]}
+    )
+
+    assert "widened" in out
+    assert "nothing carried every term" in out
+
+
+def test_a_page_that_answered_says_nothing_about_widening() -> None:
+    """It is a disclosure, not a banner. A query that worked was never widened, so the
+    sentence would be false as well as noise."""
+    out = render_search({"query": {"text": "a b c"}, "hits": [{"repo": "o/n", "number": 1}]})
+
+    assert "widened" not in out
+
+
+def test_an_empty_widened_page_says_the_cheaper_question_was_asked_too() -> None:
+    """The answer that saves a turn: the caller's words are not what zeroed this, so the
+    next turn should not be another reformulation of them."""
+    out = render_search({"query": {"text": "a b c", "widened": "any-term"}, "hits": []})
+
+    assert "nothing matched, with every term or with any of them." in out
+
+
+def test_an_empty_page_echoes_the_filters_that_produced_it() -> None:
+    """huggingface/relore#47: a *correct* `--error` can zero a query that answers at rank 1
+    without it. With only the query text on the page that reads as an absence in the corpus
+    rather than as a property of the question."""
+    out = render_search(
+        {
+            "query": {
+                "text": "size of tensor must match",
+                "kind": "failure",
+                "filters": {"symbols": ["GPTNeoXJapaneseAttention"], "errors": ["RuntimeError"]},
+                "since": "2026-03-01T00:00:00+00:00",
+            },
+            "hits": [],
+        }
+    )
+
+    assert "--kind failure" in out
+    assert "--symbol GPTNeoXJapaneseAttention" in out
+    assert "--error RuntimeError [normalized]" in out, "section 5.3's form, not the input"
+    assert "--since 2026-03-01T00:00:00+00:00" in out
+    assert "(they AND)" in out
+
+
+def test_a_page_with_hits_does_not_echo_the_filters() -> None:
+    """They are the diagnosis of a zero, and every line costs the caller tokens forever
+    (section 6's caps). A page that answered needs no diagnosis."""
+    out = render_search(
+        {
+            "query": {"text": "rope", "filters": {"errors": ["RuntimeError"]}},
+            "hits": [{"repo": "o/n", "number": 1}],
+        }
+    )
+
+    assert "--error" not in out
+
+
+def test_an_out_of_scope_page_says_the_scope_is_empty() -> None:
+    """Section 11 fails closed, and a closed scope and a quiet corpus render identically
+    unless the page says which happened."""
+    out = render_search({"query": {"text": "rope", "repos": []}, "hits": []})
+
+    assert "no repository in scope" in out
+
+
 # -- whose words are they --------------------------------------------------
 
 

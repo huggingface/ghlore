@@ -99,6 +99,17 @@ caveats:
    Filtering ANDs; scoring ORs. **Recall@k is blind to this**: a page of ten slots where
    nine are noise scores identically to ten useful ones, as long as the answer is on both. A
    recall number is necessary and not sufficient.
+7. **And the same trap, one rung further out** (0.3.13). A prose query whose terms AND to
+   nothing is now asked again with them disjoined rather than returning an empty page. Ranked
+   the obvious way — `ts_rank_cd`, the ranking the weights were fitted with — that page was
+   wrong in §10.6's exact shape: density counts *occurrences*, so against 41,857 documents of
+   the `transformers` sample the top hit carried two of seven terms and the one carrying six
+   came sixth. A widened page is ordered by **coverage** instead, `matched / asked` over the
+   caller's terms, with normalized density divided by `len(terms) + 1` underneath it so the
+   order is exactly lexicographic. Neither frozen set can see this either: the widening is
+   reachable only from an empty page and both sets report `empty 0`, so the numbers above are
+   unchanged by it — which is the third time on this list that the benchmark was necessary
+   and not sufficient.
 
 Two limits the table does not show. `failure` is close to circular — its ground truth is
 "the threads carrying this error" and `--error` matches exactly that — so no weight set can

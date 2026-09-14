@@ -85,6 +85,24 @@ MACHINE_TRUST = "machine"
 #: moved lately" rather than "what answers this".
 SORTS = ("relevance", "newest")
 
+#: How a query's free text decides *admission*. ``all`` is the conjunction every search has
+#: always been: ``plainto_tsquery`` on Postgres, one quoted term per word on FTS5, and it
+#: is what stops a pasted sentence matching everything. ``any`` is the same terms disjoined,
+#: ranked so that a row carrying more of them sorts first.
+#:
+#: **``any`` is a fallback, never a mode a caller picks.** It is asked for exactly once, by
+#: :func:`relore.search.expansion.search_best`, and only after ``all`` came back with
+#: nothing -- so no query that had an answer can be widened out of it. The reason it exists
+#: is measured: over three head-to-head runs (``relore/docs/gh-vs-relore-2026-09-14.md``)
+#: every zero-result page came from a prose query of six to nine terms, and every one cost
+#: a full turn to reformulate. The term count is the signature, the same one
+#: :meth:`relore.search.backends.base.SearchBackend._focused` documents inside one thread:
+#: a monotonic decrease ending in an empty page that reads as "the corpus has nothing",
+#: which is the one thing it did not mean.
+MATCH_ALL = "all"
+MATCH_ANY = "any"
+MATCHES = (MATCH_ALL, MATCH_ANY)
+
 
 class QueryError(ValueError):
     """A request that cannot be served as asked. Distinct from an empty result, which is
@@ -115,6 +133,9 @@ class SearchQuery:
     limit: int = MAX_HITS
     compact: bool = False
     sort: str = "relevance"
+    #: :data:`MATCH_ALL` or :data:`MATCH_ANY`. Set by the widening fallback, not by a
+    #: caller -- there is no flag and no request field for it.
+    match: str = MATCH_ALL
 
     def __post_init__(self) -> None:
         # Section 6's error term matches the *normalized* form (section 5.3), so a caller
@@ -136,6 +157,8 @@ class SearchQuery:
             raise QueryError("since must be timezone-aware")
         if self.sort not in SORTS:
             raise QueryError(f"unknown sort {self.sort!r}; one of {list(SORTS)}")
+        if self.match not in MATCHES:
+            raise QueryError(f"unknown match {self.match!r}; one of {list(MATCHES)}")
         object.__setattr__(self, "limit", max(1, min(int(self.limit), MAX_HITS)))
 
     @property
