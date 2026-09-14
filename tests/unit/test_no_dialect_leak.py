@@ -11,7 +11,7 @@ import pathlib
 
 import pytest
 
-PKG = pathlib.Path(__file__).resolve().parents[2] / "ghlore"
+PKG = pathlib.Path(__file__).resolve().parents[2] / "relore"
 
 # dialect.py *is* the seam. migrations legitimately branches: the Postgres-only search
 # layer has to be skipped somewhere, and a migration step is the honest place.
@@ -29,7 +29,7 @@ def test_only_the_seam_knows_the_dialect(marker: str) -> None:
     offenders = [name for name, body in _sources() if marker in body and name not in MAY_BRANCH]
     assert offenders == [], (
         f"{marker!r} appears outside the dialect seam: {offenders}. "
-        "Add the branch to ghlore/store/dialect.py instead."
+        "Add the branch to relore/store/dialect.py instead."
     )
 
 

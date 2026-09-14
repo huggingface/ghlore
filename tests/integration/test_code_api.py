@@ -14,14 +14,14 @@ from fake_github import FakeGitHub
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
 
-from ghlore import __version__
-from ghlore.api.server import build_app
-from ghlore.api.tokens import Authenticator, Token
-from ghlore.code.blame import blame_line
-from ghlore.code.clone import CLONE_ARGS
-from ghlore.ingest.index_thread import index_thread
-from ghlore.store import schema as s
-from ghlore.wire import CLIENT_HEADER
+from relore import __version__
+from relore.api.server import build_app
+from relore.api.tokens import Authenticator, Token
+from relore.code.blame import blame_line
+from relore.code.clone import CLONE_ARGS
+from relore.ingest.index_thread import index_thread
+from relore.store import schema as s
+from relore.wire import CLIENT_HEADER
 
 REPO = "owner/name"
 
@@ -214,7 +214,7 @@ def test_a_repository_with_no_clone_says_so_rather_than_failing(engine: Engine, 
 
     assert response.status_code == 503
     assert "no working clone" in response.json()["detail"]
-    assert "ghlored clone" in response.json()["detail"]
+    assert "relored clone" in response.json()["detail"]
 
 
 def test_a_token_cannot_read_a_tree_it_cannot_read_threads_from(engine: Engine, clone_root) -> None:

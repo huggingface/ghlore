@@ -6,8 +6,8 @@ import sys
 
 import pytest
 
-from ghlore import cli, daemon
-from ghlore.code import registry
+from relore import cli, daemon
+from relore.code import registry
 
 
 @pytest.mark.parametrize("mod", [cli, daemon])
@@ -63,15 +63,15 @@ def test_every_documented_verb_is_registered(verb: str) -> None:
     ],
 )
 def test_a_global_flag_is_accepted_on_either_side_of_the_verb(argv: list[str]) -> None:
-    """`ghlore search ... --json` is what anyone writes by analogy with `git` and `gh`, and
+    """`relore search ... --json` is what anyone writes by analogy with `git` and `gh`, and
     argparse called the flag *unrecognized* rather than misplaced -- which sends the reader
-    looking for a typo (huggingface/ghlore#6)."""
+    looking for a typo (huggingface/relore#6)."""
     assert cli.build_parser().parse_args(argv).json is True
 
 
 def test_the_subparser_alias_does_not_overwrite_a_flag_given_before_the_verb() -> None:
     """The trap in accepting it twice: a subparser default would silently turn
-    `ghlore --json search` back off."""
+    `relore --json search` back off."""
     args = cli.build_parser().parse_args(["--compact", "search", "anything"])
 
     assert args.compact is True
@@ -122,7 +122,7 @@ def test_the_default_api_is_the_deployment_and_is_overridable() -> None:
     )
 
 
-# -- GHLORE_REPO (issue #36) -----------------------------------------------
+# -- RELORE_REPO (issue #36) -----------------------------------------------
 
 
 @pytest.mark.parametrize("verb,argv", [("thread", ["42"]), ("why", ["a.py:1"]), ("grep", ["x"])])
@@ -147,7 +147,7 @@ def test_the_flag_beats_the_environment(monkeypatch) -> None:
 
 
 def test_an_empty_variable_reads_as_unset_rather_than_as_a_repository(monkeypatch) -> None:
-    """`export GHLORE_REPO=` must hand the question back to the daemon, not ask it about a
+    """`export RELORE_REPO=` must hand the question back to the daemon, not ask it about a
     repository named "", which is a 404 with a confusing sentence in it."""
     monkeypatch.setenv(cli.REPO_ENV, "")
 

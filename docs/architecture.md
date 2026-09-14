@@ -6,13 +6,13 @@
           |  poll (delta)                |  the lens: line -> name, at each
           |  + backfill (full history)   |  document's own commit; renames
           v                              v
-     ghlored index  ------>  Postgres  (threads, documents, signals, precedents)
+     relored index  ------>  Postgres  (threads, documents, signals, precedents)
                                 |
                                 |  full-text + trigram + exact-token, weighted
                                 v
-                          ghlored serve  ->  HTTP JSON API + web UI
+                          relored serve  ->  HTTP JSON API + web UI
                                 |
-                  ghlore (CLI)  |  a browser
+                  relore (CLI)  |  a browser
                         |
                         |  map / defs / refs: the same parser, run locally
                         v  against the working tree. No server, no network.
@@ -46,7 +46,7 @@ No source text is stored server-side and no API response returns any. Code is ne
 - **Server-side, at index time — the lens.** Reading the tree at a document's own commit
   turns `foo.py:412` into `Gemma3Model.forward`, so "every review comment ever left inside
   this function" survives the file being edited. Also gives rename chains, and is what
-  `ghlore why <path:line>` will read — that verb is a milestone-4 stub today.
+  `relore why <path:line>` will read — that verb is a milestone-4 stub today.
   Footprint: two nullable columns and a rename table.
 - **Client-side — `map` / `defs` / `refs`.** The same parser against your dirty checkout.
   Local and offline, and therefore correct about the branch you are on, which a remote

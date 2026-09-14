@@ -1,4 +1,4 @@
-"""The split between ``ghlore`` and ``ghlored`` is a security boundary, not packaging
+"""The split between ``relore`` and ``relored`` is a security boundary, not packaging
 taste. Assert it statically, so "the agent's binary cannot write to the index" is a
 property of the build rather than a promise in a document.
 
@@ -15,7 +15,7 @@ import sys
 
 import pytest
 
-PKG_ROOT = pathlib.Path(__file__).resolve().parents[2] / "ghlore"
+PKG_ROOT = pathlib.Path(__file__).resolve().parents[2] / "relore"
 
 # A database driver or a web server reachable from the client means the sandbox install
 # just grew one, whether or not the code path is ever taken.
@@ -25,7 +25,7 @@ ML = ("torch", "sentence_transformers", "transformers", "lancedb", "numpy")
 
 
 def _module_file(mod: str) -> pathlib.Path | None:
-    if mod != "ghlore" and not mod.startswith("ghlore."):
+    if mod != "relore" and not mod.startswith("relore."):
         return None
     base = PKG_ROOT.joinpath(*mod.split(".")[1:])
     if base.is_dir():
@@ -65,7 +65,7 @@ def reachable(root: str) -> set[str]:
             continue
         for imp in _imports(path, mod):
             seen.add(imp)
-            if imp.startswith("ghlore"):
+            if imp.startswith("relore"):
                 stack.append(imp)
     return seen
 
@@ -75,27 +75,27 @@ def _offenders(mods: set[str], forbidden: tuple[str, ...]) -> set[str]:
 
 
 def test_client_reaches_no_database_or_server() -> None:
-    assert _module_file("ghlore.cli") is not None, (
-        "ghlore.cli must exist for this test to mean anything"
+    assert _module_file("relore.cli") is not None, (
+        "relore.cli must exist for this test to mean anything"
     )
-    assert _offenders(reachable("ghlore.cli"), DB_AND_SERVER) == set()
+    assert _offenders(reachable("relore.cli"), DB_AND_SERVER) == set()
 
 
 def test_client_reaches_no_ml_stack() -> None:
-    assert _offenders(reachable("ghlore.cli"), ML) == set()
+    assert _offenders(reachable("relore.cli"), ML) == set()
 
 
-@pytest.mark.parametrize("forbidden", ["ghlore.store", "ghlore.github", "ghlore.api"])
+@pytest.mark.parametrize("forbidden", ["relore.store", "relore.github", "relore.api"])
 def test_client_reaches_no_server_side_package(forbidden: str) -> None:
-    assert _offenders(reachable("ghlore.cli"), (forbidden,)) == set()
+    assert _offenders(reachable("relore.cli"), (forbidden,)) == set()
 
 
-@pytest.mark.parametrize("forbidden", ["ghlore.store", "ghlore.github", "ghlore.api"])
+@pytest.mark.parametrize("forbidden", ["relore.store", "relore.github", "relore.api"])
 def test_code_lens_is_a_pure_function_of_a_tree(forbidden: str) -> None:
-    """``ghlore.code`` runs in both binaries -- against a working tree in the client and a
+    """``relore.code`` runs in both binaries -- against a working tree in the client and a
     historical blob in the daemon. That only works if it knows about neither."""
-    assert _module_file("ghlore.code") is not None
-    assert _offenders(reachable("ghlore.code"), (forbidden,)) == set()
+    assert _module_file("relore.code") is not None
+    assert _offenders(reachable("relore.code"), (forbidden,)) == set()
 
 
 def test_the_client_actually_runs_with_nothing_server_side_importable() -> None:
@@ -103,8 +103,8 @@ def test_the_client_actually_runs_with_nothing_server_side_importable() -> None:
 
     The static test proves the *import graph*; this proves the *install*. It catches what
     the walk structurally cannot: a parent package's ``__init__`` pulled in as a side
-    effect of importing a leaf module. ``from ghlore.search.queries import Hit`` looks
-    stdlib-only to an AST reader and executes ``ghlore/search/__init__.py`` -- which
+    effect of importing a leaf module. ``from relore.search.queries import Hit`` looks
+    stdlib-only to an AST reader and executes ``relore/search/__init__.py`` -- which
     imports SQLAlchemy.
     """
     blocked = (*DB_AND_SERVER, *ML, "psycopg", "pydantic")
@@ -119,9 +119,9 @@ def test_the_client_actually_runs_with_nothing_server_side_importable() -> None:
     monkey = builtins.__import__
     builtins.__import__ = guard
     try:
-        importlib.reload(importlib.import_module("ghlore.cli"))
-        importlib.reload(importlib.import_module("ghlore.render"))
-        importlib.reload(importlib.import_module("ghlore.code.repomap"))
+        importlib.reload(importlib.import_module("relore.cli"))
+        importlib.reload(importlib.import_module("relore.render"))
+        importlib.reload(importlib.import_module("relore.code.repomap"))
     finally:
         builtins.__import__ = monkey
         sys.modules.update(saved)

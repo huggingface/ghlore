@@ -14,8 +14,8 @@ from importlib.metadata import EntryPoint
 import pytest
 from toy_language import ToyDefsOnlyProvider, ToyProvider
 
-from ghlore.code import registry
-from ghlore.code.api import CAPABILITIES, DEFS, EXTENTS, REFS, LanguageProvider, MissingParser
+from relore.code import registry
+from relore.code.api import CAPABILITIES, DEFS, EXTENTS, REFS, LanguageProvider, MissingParser
 
 PYTHON_SOURCE = b'''
 import os
@@ -70,7 +70,7 @@ def _first_class() -> list:
         pytest.param(ToyDefsOnlyProvider(), id="toy-defs-only"),
     ]
     try:
-        from ghlore.code.providers.python import PythonProvider
+        from relore.code.providers.python import PythonProvider
 
         out.append(pytest.param(PythonProvider(), id="python"))
     except Exception as exc:  # noqa: BLE001
@@ -177,7 +177,7 @@ def test_error_recovery_has_a_ceiling_and_it_is_unbalanced_brackets() -> None:
     caller that assumed otherwise would read a truncated definition list as a small file.
     """
     try:
-        from ghlore.code.providers.python import PythonProvider
+        from relore.code.providers.python import PythonProvider
     except Exception as exc:  # noqa: BLE001
         pytest.skip(f"tree-sitter-python: {exc}")
 
@@ -197,7 +197,7 @@ def test_error_recovery_has_a_ceiling_and_it_is_unbalanced_brackets() -> None:
 def test_ctags_reports_itself_unavailable_rather_than_returning_nothing() -> None:
     """``ctags`` on PATH proves nothing: macOS ships BSD ctags, which has no
     ``--output-format``. A wrong answer here is a silently empty definition list."""
-    from ghlore.code.providers.ctags import CtagsProvider
+    from relore.code.providers.ctags import CtagsProvider
 
     provider = CtagsProvider()
     if not provider.available():
@@ -250,7 +250,7 @@ def test_a_provider_whose_grammar_is_missing_is_skipped_with_a_warning(
         monkeypatch,
         EntryPoint(
             name="klingon",
-            value="ghlore_klingon_grammar_that_is_not_installed:Provider",
+            value="relore_klingon_grammar_that_is_not_installed:Provider",
             group=registry.ENTRY_POINT_GROUP,
         ),
     )
@@ -267,7 +267,7 @@ def test_an_unclaimed_file_falls_to_ctags_at_defs_only_fidelity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _register(monkeypatch)  # no first-class providers at all
-    from ghlore.code.providers.ctags import CtagsProvider
+    from relore.code.providers.ctags import CtagsProvider
 
     if not CtagsProvider().available():
         pytest.skip("no universal-ctags on PATH")

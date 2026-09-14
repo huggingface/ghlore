@@ -10,8 +10,8 @@ import os
 
 import pytest
 
-from ghlore.code import survey
-from ghlore.code.survey import copies, grep, symbol_body
+from relore.code import survey
+from relore.code.survey import copies, grep, symbol_body
 
 CANONICAL = """\
 def compute_default_rope_parameters(config):

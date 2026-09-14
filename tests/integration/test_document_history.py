@@ -17,8 +17,8 @@ import pytest
 from fake_github import FakeGitHub
 from sqlalchemy import Engine, func, select
 
-from ghlore.ingest.index_thread import index_thread
-from ghlore.store import schema as s
+from relore.ingest.index_thread import index_thread
+from relore.store import schema as s
 
 REPO = "owner/name"
 
@@ -158,7 +158,7 @@ def test_the_history_is_not_searchable(engine: Engine, fake: FakeGitHub) -> None
     current, would be worse than not having kept it -- section 6.2 is about what is
     *served*, and the history has no tier, no age and no envelope of its own.
     """
-    from ghlore.search import SearchQuery, open_backend
+    from relore.search import SearchQuery, open_backend
 
     pr = fake.add_pr(1)
     comment = fake.add_comment(pr, 100, "flibbertigibbet is the distinctive word")
@@ -174,7 +174,7 @@ def test_the_history_is_not_searchable(engine: Engine, fake: FakeGitHub) -> None
 def test_status_counts_what_was_kept(engine: Engine, fake: FakeGitHub) -> None:
     """Nothing searches the table, so this count is the only way to see the capture works.
     Zero after a long-running poll is a symptom, not a quiet corpus."""
-    from ghlore.store.repository import index_summary
+    from relore.store.repository import index_summary
 
     pr = fake.add_pr(1)
     comment = fake.add_comment(pr, 100, "before")

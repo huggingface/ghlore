@@ -1,5 +1,5 @@
 #------------------------------------------------------------------------------
-# `ghlored poll` -- one Deployment per indexed repository.
+# `relored poll` -- one Deployment per indexed repository.
 #
 # A Deployment running a loop, not a CronJob, and the reason is build-plan section
 # 5.2 rather than taste: the checkpoint advances per *committed thread* and stops
@@ -45,7 +45,7 @@ spec:
         - name: poll
           image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
-          args: [{{ include "ghlore.verbosity" $ }}"poll", "--repo", {{ $repo | quote }}, "--interval", {{ $.Values.poll.interval | quote }}]
+          args: [{{ include "relore.verbosity" $ }}"poll", "--repo", {{ $repo | quote }}, "--interval", {{ $.Values.poll.interval | quote }}]
           envFrom:
             - configMapRef:
                 name: {{ include "name" $ }}-config
@@ -63,7 +63,7 @@ spec:
                 secretKeyRef:
                   name: {{ $.Values.existingSecret }}
                   key: POSTGRES_PASSWORD
-            - name: GHLORE_DATABASE_URL
-              value: {{ include "ghlore.databaseUrl" $ | quote }}
+            - name: RELORE_DATABASE_URL
+              value: {{ include "relore.databaseUrl" $ | quote }}
           resources: {{ toYaml $.Values.poll.resources | nindent 12 }}
 {{- end }}

@@ -1,6 +1,6 @@
 """The clone refresh loop (issue #7).
 
-The failure it exists for is silent: nothing re-ran `ghlored clone`, so HEAD aged and
+The failure it exists for is silent: nothing re-ran `relored clone`, so HEAD aged and
 `grep`, `copies` and `why` kept answering -- about a tree from whenever somebody last
 remembered. The second failure class is the loop itself becoming the outage: a refresh
 that cannot reach github.com must leave the clone it has and say so.
@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import threading
 
-from ghlore.code.clone import CloneInfo, CloneUnavailable, WorkingClones
-from ghlore.code.refresh import cloned_repos, refresh_once, start_refresh
+from relore.code.clone import CloneInfo, CloneUnavailable, WorkingClones
+from relore.code.refresh import cloned_repos, refresh_once, start_refresh
 
 
 def _clone_dir(root, repo: str) -> None:

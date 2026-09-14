@@ -5,7 +5,7 @@ Postgres is **skipped, never silently passed**, when no server is configured -- 
 suite that only ever ran on SQLite would be a green suite about the wrong database
 (the build plan section 12).
 
-    GHLORE_TEST_POSTGRES_URL=postgresql://localhost/ghlore_test make test
+    RELORE_TEST_POSTGRES_URL=postgresql://localhost/relore_test make test
 """
 
 from __future__ import annotations
@@ -20,11 +20,11 @@ from sqlalchemy import Engine, text
 
 sys.path.insert(0, str(Path(__file__).parent / "fixtures"))
 
-from ghlore.store.dialect import make_engine  # noqa: E402
-from ghlore.store.migrations import migrate  # noqa: E402
-from ghlore.store.schema import metadata  # noqa: E402
+from relore.store.dialect import make_engine  # noqa: E402
+from relore.store.migrations import migrate  # noqa: E402
+from relore.store.schema import metadata  # noqa: E402
 
-POSTGRES_ENV = "GHLORE_TEST_POSTGRES_URL"
+POSTGRES_ENV = "RELORE_TEST_POSTGRES_URL"
 
 
 @pytest.fixture(params=["sqlite", "postgresql"])

@@ -1,6 +1,6 @@
 """Every surface that describes the verbs, held to the invariant one of them already had.
 
-`ghlore` describes its verbs in four places -- the parser, the landing page, `docs/cli.md`
+`relore` describes its verbs in four places -- the parser, the landing page, `docs/cli.md`
 and the agent skill. At 0.3.4 exactly one of them had a drift test, and it was the only one
 still correct: `cli.md` called `why` "a stub today" after it shipped, and the skill told
 agents *not* to use `grep` and `symbol`, which is the opposite of what they are for.
@@ -10,7 +10,7 @@ parametrized over all four (issue #40).
 The three rules here each come from a real failure in a field report (#8):
 
 1. **Every surface names every shipped verb**, in command form. That is #29's rule for the
-   page, and the list comes from :func:`ghlore.guidance.shipped_verbs`, which reads the
+   page, and the list comes from :func:`relore.guidance.shipped_verbs`, which reads the
    parser -- so a verb added later fails here until the surfaces name it, and one still
    marked ``NOT IMPLEMENTED`` excludes itself.
 2. **Every runnable example of a repo-scoped verb carries ``--repo``** (#39). 26 of 29
@@ -27,9 +27,9 @@ from pathlib import Path
 
 import pytest
 
-from ghlore import guidance
-from ghlore.api.ui import page
-from ghlore.cli import build_parser
+from relore import guidance
+from relore.api.ui import page
+from relore.cli import build_parser
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI_MD = (ROOT / "docs" / "cli.md").read_text()
@@ -56,7 +56,7 @@ EVERY_SURFACE = REFERENCES + [
 UNBUILT = re.compile(r"not implemented|NOT IMPLEMENTED|a stub today|not built|is a stub")
 
 #: A line with one of these in it is teaching a shape, not offering something to paste --
-#: `ghlore thread N --full` cannot be run as written. Only runnable lines are held to rule
+#: `relore thread N --full` cannot be run as written. Only runnable lines are held to rule
 #: 2, because the rule exists to stop a reader copying a command that then 400s.
 SCHEMATIC = re.compile(r"[<>]|\bN\b|PATH:LINE|OWNER/NAME|QUERY|REGEX|SYMBOL|QUALNAME|\.\.\.|…")
 
@@ -65,7 +65,7 @@ def _code_lines(name: str, text: str) -> list[str]:
     """The command lines a reader could copy, with continuations joined.
 
     Fenced blocks in markdown, ``<pre>`` in HTML, everything in ``--help``. Prose is
-    excluded on purpose: "`ghlore thread` reads the rest of it" is a sentence, and holding a
+    excluded on purpose: "`relore thread` reads the rest of it" is a sentence, and holding a
     sentence to the shape of a command would only teach us to stop writing sentences.
     """
     if name == "help":
@@ -83,7 +83,7 @@ def _invocations(name: str, text: str) -> list[str]:
     out = []
     for line in _code_lines(name, text):
         parts = line.split()
-        if len(parts) >= 2 and parts[0] == "ghlore" and parts[1] in verbs:
+        if len(parts) >= 2 and parts[0] == "relore" and parts[1] in verbs:
             out.append(line)
     return out
 
@@ -95,7 +95,7 @@ def test_every_prose_surface_names_every_shipped_verb(name: str, text: str) -> N
     shipped = guidance.shipped_verbs()
 
     assert len(shipped) >= 11, f"expected the full verb list, got {sorted(shipped)}"
-    missing = [verb for verb in shipped if f"ghlore {verb}" not in readable]
+    missing = [verb for verb in shipped if f"relore {verb}" not in readable]
     assert not missing, f"{name} never names in command form: {missing}"
 
 
@@ -134,7 +134,7 @@ def test_no_surface_calls_a_shipped_verb_unimplemented(name: str, text: str) -> 
         offenders += [
             f"{verb}: {line.strip()}"
             for verb in shipped
-            if re.search(rf"\bghlore {verb}\b|`{verb}[ `]", window)
+            if re.search(rf"\brelore {verb}\b|`{verb}[ `]", window)
         ]
 
     assert not offenders, f"{name} calls a shipped verb unimplemented: {offenders}"
@@ -142,7 +142,7 @@ def test_no_surface_calls_a_shipped_verb_unimplemented(name: str, text: str) -> 
 
 @pytest.mark.parametrize("name,text", EVERY_SURFACE, ids=[n for n, _ in EVERY_SURFACE])
 def test_no_surface_pins_a_stale_version(name: str, text: str) -> None:
-    """A `ghlore status` sample is a reader's mental model of the command, and two of them
+    """A `relore status` sample is a reader's mental model of the command, and two of them
     had drifted by four releases -- one showing a capability set and a schema list the
     daemon no longer has (#39 item 5).
 
@@ -152,7 +152,7 @@ def test_no_surface_pins_a_stale_version(name: str, text: str) -> None:
     has to say exactly that, because whoever trips it is mid-release and did not come here
     to read a test.
     """
-    from ghlore import __version__
+    from relore import __version__
 
     stale = [
         line.strip()
@@ -161,7 +161,7 @@ def test_no_surface_pins_a_stale_version(name: str, text: str) -> None:
     ]
 
     assert not stale, (
-        f"{name} shows a `ghlore status` version that is not {__version__}: {stale}. "
+        f"{name} shows a `relore status` version that is not {__version__}: {stale}. "
         f"Bumping `__version__` means updating the samples that print it -- "
         f"docs/cli.md and docs/how-search-works.md -- in the same commit."
     )
@@ -171,8 +171,8 @@ def test_the_help_epilog_is_the_guidance_module() -> None:
     """#38 asks that `--help` be sufficient on its own, and #40 that it not become a fifth
     copy of the same prose while doing so."""
     assert guidance.epilog() in HELP
-    assert "GHLORE_REPO" in HELP
-    assert "GHLORE_TOKEN" in HELP
+    assert "RELORE_REPO" in HELP
+    assert "RELORE_TOKEN" in HELP
 
 
 def test_the_page_agent_paragraph_is_the_guidance_module() -> None:

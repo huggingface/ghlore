@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ghlore.bench import dataset as ds
+from relore.bench import dataset as ds
 
 
 def _example(**kwargs) -> ds.Example:

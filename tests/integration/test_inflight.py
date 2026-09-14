@@ -17,10 +17,10 @@ import pytest
 from fake_github import FakeGitHub, FakeGraphQL
 from sqlalchemy import Engine, func, select
 
-from ghlore.ingest.backfill import backfill
-from ghlore.ingest.index_thread import derive_thread, index_thread
-from ghlore.search import open_backend
-from ghlore.store import schema as s
+from relore.ingest.backfill import backfill
+from relore.ingest.index_thread import derive_thread, index_thread
+from relore.search import open_backend
+from relore.store import schema as s
 
 REPO = "owner/name"
 

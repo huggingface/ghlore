@@ -1,6 +1,6 @@
 name: image
 
-# Publishes ghcr.io/huggingface/ghlore:sha-<commit> on every push to main, and
+# Publishes ghcr.io/huggingface/relore:sha-<commit> on every push to main, and
 # :latest alongside it.
 #
 # The tag is the commit, and the deploy pins it. Section 15's deployment is not
@@ -10,10 +10,10 @@ name: image
 on:
   push:
     branches: [main]
-    # No point rebuilding for a docs-only change; the image holds ghlore/ and the
+    # No point rebuilding for a docs-only change; the image holds relore/ and the
     # packaging metadata and nothing else (see .dockerignore).
     paths:
-      - "ghlore/**"
+      - "relore/**"
       - "pyproject.toml"
       - "Dockerfile"
       - ".github/workflows/image.yml"

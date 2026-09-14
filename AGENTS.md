@@ -1,6 +1,6 @@
-# AGENTS.md — working in `ghlore`
+# AGENTS.md — working in `relore`
 
-`ghlore` indexes a repository's complete issue and pull-request history into Postgres and
+`relore` indexes a repository's complete issue and pull-request history into Postgres and
 serves it back to coding agents and humans. It is memory of the project's *conversation*,
 not of its tree.
 
@@ -17,7 +17,7 @@ survive a context window.
 
 ## Where things stand
 
-**Milestones 0–3 are done, and it is deployed** (2026-09-09) — Postgres, `ghlored serve`
+**Milestones 0–3 are done, and it is deployed** (2026-09-09) — Postgres, `relored serve`
 and a poll loop in a Kubernetes namespace, from `deploy/`. Building is paused so the thing
 can be used: everything left is gated on evidence a laptop cannot produce.
 
@@ -28,16 +28,16 @@ milestone 4 without reading it.
 
  Milestone 3 landed in six pieces: §6.2's authority
 resolution with the query-kind trust floors (§13.1 #9), **§5.3's extraction pass**,
-**`ghlored sample` (§5.5)**, **§10's benchmark** (§10.1 for the method, §10.2–10.3 for
+**`relored sample` (§5.5)**, **§10's benchmark** (§10.1 for the method, §10.2–10.3 for
 what it measured), **§6's query expansion** (§10.4), and **§6's weighted ranking**
-(§10.5). `ghlored migrate |
+(§10.5). `relored migrate |
 fetch | backfill | sample | derive | poll | sweep | authority | mine | judge | bench |
-serve | status` and `ghlore search | thread | inflight | why | status | map | defs | refs |
+serve | status` and `relore search | thread | inflight | why | status | map | defs | refs |
 symbol | grep | copies` work end to end; `precedent` is the one verb still a stub, and
-`--help` marks it. Do not write that list from memory — `ghlore.guidance.shipped_verbs()`
+`--help` marks it. Do not write that list from memory — `relore.guidance.shipped_verbs()`
 derives it from the parser, and `tests/unit/test_prose_surfaces.py` holds every
 reader-facing surface to it (#40).
-~11,000 lines under `ghlore/`, **806 tests**, every store-level and retrieval-level one on
+~11,000 lines under `relore/`, **806 tests**, every store-level and retrieval-level one on
 both dialects. The `--file`/`--symbol`/`--error`/`--test` filters answer. **Retrieval is
 ranked**: full text, filters, the trust floor, the expansion fan-out and §6's weighted
 score. Kind-aware decay is built and **gated off** (`ranking.DECAY_ENABLED`) — §6's table
@@ -63,7 +63,7 @@ walks `/issues/comments` at all.
 Extraction was measured on that index: 616 file rows over 222 distinct paths, 522 symbols,
 173 commits — and **2 errors and 2 test ids**. serge's PR discussions rarely paste a
 traceback, so §10's error and test slices could not be built from it. That is what
-`ghlored sample` (§5.5) exists for, and the corpus it built is the one to work against:
+`relored sample` (§5.5) exists for, and the corpus it built is the one to work against:
 a sample of `huggingface/transformers` from **2026-03-01** — 1,265 issues and 1,799 merged
 PRs, 3,064 threads, 41,857 documents, 776 errors across 542 threads, 1,407 test ids,
 19,955 file rows over 6,241 paths, 25,049 symbols. Trust: 52.5% `authoritative`, 36.6%
@@ -73,7 +73,7 @@ there, not only the bot one — see §10, where the 18-vs-4,071 measurement is r
 | Built | Empty — nothing written yet |
 | --- | --- |
 | `store/` — `schema.py`, `dialect.py`, `migrations/` (7 steps), `repository.py`, `documents_history` (§14.1) | `ingest/plugins.py` |
-| `github/` — `client.py`, `bulk.py`, `graphql.py`, `fetch_thread.py` | `precedents` and `ghlore precedent` — milestone 4 |
+| `github/` — `client.py`, `bulk.py`, `graphql.py`, `fetch_thread.py` | `precedents` and `relore precedent` — milestone 4 |
 | `ingest/` — normalize, chunk, timestamps, versions, `extract` (§5.3), `relationships` (§13.3), `index_thread`, `poll`, `backfill`, `sample` (§5.5), `sweep` | `code/` — the *server-side* half of the lens: the working clone, `path_aliases`, `enclosing_symbol` at derive time |
 | `search/` — `SearchBackend` per dialect, filters, caps, the thread view, §6.2's query-kind trust floors, `expansion.py` (§6, §10.4), `ranking.py` (§6, §10.5) | |
 | `bench/` — §10's evaluation set, the miner, the label fold, and the runner with both baselines | |
@@ -84,18 +84,18 @@ there, not only the bot one — see §10, where the 18-vs-4,071 measurement is r
 | `render.py` — one renderer for the CLI and the UI's raw view | |
 | `cli.py` and `daemon.py` — every verb above; the rest exit with their milestone | |
 
-**Part of milestone 4's code lens landed** (issues #7 and #9): `ghlored clone` keeps a
+**Part of milestone 4's code lens landed** (issues #7 and #9): `relored clone` keeps a
 working clone per repository at HEAD -- complete, not filtered, so a query never fetches -- `/api/v1/code/{defs,refs,symbol,grep,copies}`
-answers from it, and `ghlore why PATH:LINE` blames the line and returns the pull request
+answers from it, and `relore why PATH:LINE` blames the line and returns the pull request
 that carried the commit with the review comments anchored near it. HEAD is the depth these
 verbs need and settles nothing about §14.4(a): the *lens* — `enclosing_symbol` at the tree a
 comment was written against — still wants per-merge-commit checkouts. A repository with no
 clone answers 503; the conversation index never depends on a checkout (§14.4b). Still
-unbuilt in milestone 4: `precedents`, `ghlore precedent`, the §9 extension entry points.
+unbuilt in milestone 4: `precedents`, `relore precedent`, the §9 extension entry points.
 
 Tables that exist but nothing populates: `path_aliases`, `precedents`, `precedent_signals`.
 **`thread_links` is now written** (§13.3): the derive pass records "this pull request claims
-to close #N" and `ghlore inflight` walks it backwards. It used to be a foreign key to
+to close #N" and `relore inflight` walks it backwards. It used to be a foreign key to
 `threads` on *both* ends, which is why nothing ever wrote it — an edge was unstorable until
 its target was indexed, so a corpus-wide pass had to exist before a single edge did. It now
 carries `target_number` (known from the source thread alone, so the poll fills it) and a
@@ -104,7 +104,7 @@ nullable `target_thread_id` (the resolution, which only ranking's `w_rel` needs)
 There is no keywords table and §5.3's keywords are deliberately not extracted — no term in
 §6's score reads them, so they would be rows nothing looks at (§13.2).
 `documents.trust` is derived from the
-payload **plus** `repo_authority`, which `ghlored authority` fills — run it after a backfill
+payload **plus** `repo_authority`, which `relored authority` fills — run it after a backfill
 or the `authoritative` tier is empty on any org-owned repository (measured: 0 of 415
 documents on `huggingface/serge` before the pass, 288 after).
 
@@ -119,10 +119,10 @@ file, which is what `judge` tells you.
 The loop:
 
 ```bash
-ghlored mine  --repo huggingface/transformers --out benchmarks/huggingface-transformers.jsonl
-ghlored serve                                       # label through the section 8 UI
-ghlored judge --set benchmarks/…jsonl --labels labels.jsonl   # verdicts -> ground truth
-ghlored bench --repo huggingface/transformers --set benchmarks/…jsonl \
+relored mine  --repo huggingface/transformers --out benchmarks/huggingface-transformers.jsonl
+relored serve                                       # label through the section 8 UI
+relored judge --set benchmarks/…jsonl --labels labels.jsonl   # verdicts -> ground truth
+relored bench --repo huggingface/transformers --set benchmarks/…jsonl \
   --system index --system github --system grep --clone /path/to/transformers
 ```
 
@@ -130,8 +130,8 @@ The `grep` baseline needs a checkout and nothing else. Use a detached worktree o
 `origin/main` rather than a branch someone is working on — the number is only reproducible
 if the tree is.
 
-Labelling needs a token with the `label` scope and `GHLORE_LABELS_PATH` pointing somewhere.
-Both sets are already frozen (`ghlored judge --set … --freeze`, which takes no `--labels`
+Labelling needs a token with the `label` scope and `RELORE_LABELS_PATH` pointing somewhere.
+Both sets are already frozen (`relored judge --set … --freeze`, which takes no `--labels`
 when there is nothing left to fold), so `bench` needs no `--allow-unfrozen`.
 
 **Milestone 4 is next when building resumes** (see §15 first), and two of its pieces are
@@ -159,16 +159,16 @@ Two measurements to carry into that work rather than re-derive:
   retrieving anything; every candidate carries `source.leaks` and the report splits them
   (§10.1 #2). Do not average the two and quote one number.
 * **The unranked baseline, so a later weight set is a measurement and not a claim.**
-  Postgres, window 2026-03-01, R@10 `ghlore` vs GitHub search vs `grep` — `failure` 0.938
+  Postgres, window 2026-03-01, R@10 `relore` vs GitHub search vs `grep` — `failure` 0.938
   vs 0.875 vs 0.000, `rationale` 0.765 vs 0.294 vs 0.314, `precedent` 0.375 vs 0.325 vs
-  0.200. **`ghlore` beats `grep` on all three**, so milestone 3's two-baseline requirement
+  0.200. **`relore` beats `grep` on all three**, so milestone 3's two-baseline requirement
   is met.
 * **`grep`'s zero on `failure` is structural, not a cutoff.** The answers are 50 issues to
   29 PRs and grep's only bridge is "threads that touched this path", which is PR-shaped:
   the answer is somewhere in its ranked list for 13 of 48 examples and its best rank over
   those is 26. Do not re-derive this by widening the top-k — it was traced over every
   candidate, not the top ten.
-* **Do not quote the `rationale` row. On the leak-free subset `ghlore` loses**, and it is
+* **Do not quote the `rationale` row. On the leak-free subset `relore` loses**, and it is
   now 16 examples over three repositories rather than seven: 0.286 vs GitHub's 0.857 on
   transformers, 0.222 vs 0.667 on the diffusers+mlinter corpus (§10.3). Replicated, and
   losing to grep too.
@@ -240,17 +240,17 @@ an invariant, are load-bearing — keep those and cut around them.
 Each has a test. If you find yourself weakening the test to land a change, you are about
 to break the property the test exists for.
 
-**1. The client cannot reach the index.** The module graph from `ghlore.cli` contains no
+**1. The client cannot reach the index.** The module graph from `relore.cli` contains no
 database driver, no GitHub client, no web server, no ML stack, and no
-`ghlore.store`/`github`/`api`. Neither does `ghlore.code`, which runs in *both* binaries.
-Base `pip install ghlore` is the client and must stay small enough for a constrained agent
+`relore.store`/`github`/`api`. Neither does `relore.code`, which runs in *both* binaries.
+Base `pip install relore` is the client and must stay small enough for a constrained agent
 sandbox; `[server]`, `[postgres]`, `[code]`, `[python]` are extras, and a verb whose extra
 is missing exits with an install hint, never an `ImportError`.
 → `tests/unit/test_module_boundary.py`, which checks this **twice**: statically over the
 import graph, and again at runtime with the server-side packages blocked at the import
 hook. The second is not redundant — the AST walk cannot see a parent package's `__init__`
-being executed by a leaf import, and `from ghlore.search.queries import Hit` reads as
-stdlib-only while running `ghlore/search/__init__.py`, which imports SQLAlchemy. That is
+being executed by a leaf import, and `from relore.search.queries import Hit` reads as
+stdlib-only while running `relore/search/__init__.py`, which imports SQLAlchemy. That is
 the shape in which the client would actually grow a driver. This pair is what makes "an
 agent cannot write to the index" a property of the build.
 
@@ -303,15 +303,15 @@ rendered; the scrub covers it either way, the attribution does not.
 
 ## One version, both ends
 
-`ghlore/__init__.py`'s `__version__` is the **compatibility contract**, not a label, and it
+`relore/__init__.py`'s `__version__` is the **compatibility contract**, not a label, and it
 is the only place the version is written — `pyproject.toml` reads it from there.
 
 The client and the daemon refuse to talk across a difference: every `/api/v1` request
-declares `x-ghlore-client`, a daemon that reads anything else answers **426**, and every
-response carries `x-ghlore-version` so the client catches a daemon too old to enforce it.
+declares `x-relore-client`, a daemon that reads anything else answers **426**, and every
+response carries `x-relore-version` so the client catches a daemon too old to enforce it.
 The reason is the failure this project is worst at noticing — an old client gets an answer
 whose every known field is right and whose new ones are simply absent: well-formed,
-plausible, silently incomplete (§13.3). `ghlore/wire.py`, and it is stdlib-only because
+plausible, silently incomplete (§13.3). `relore/wire.py`, and it is stdlib-only because
 invariant 1 puts it in the client's import graph.
 
 Three rules follow, and forgetting any of them is felt by somebody else:
@@ -323,7 +323,7 @@ Three rules follow, and forgetting any of them is felt by somebody else:
    breaks every client installed after the merge; they are told the deployment is behind,
    which is true and is nobody's intent.
 3. **Update the samples that print it in the same commit** — `docs/cli.md` and
-   `docs/how-search-works.md` each show a `ghlore status` page. Both had drifted by four
+   `docs/how-search-works.md` each show a `relore status` page. Both had drifted by four
    releases (#39); `test_prose_surfaces.py` now fails the bump until they follow.
 
 → `tests/unit/test_wire.py`, `tests/integration/test_api.py` ("the version handshake"),
@@ -344,9 +344,9 @@ diagnostics; they are not CI and must not drive changes.
 `make test` needs no database. Add Postgres — see below for why you must:
 
 ```bash
-docker run -d --name ghlore-pg -e POSTGRES_PASSWORD=test -e POSTGRES_DB=ghlore_test \
+docker run -d --name relore-pg -e POSTGRES_PASSWORD=test -e POSTGRES_DB=relore_test \
   -p 55432:5432 pgvector/pgvector:pg16
-GHLORE_TEST_POSTGRES_URL=postgresql://postgres:test@127.0.0.1:55432/ghlore_test make test
+RELORE_TEST_POSTGRES_URL=postgresql://postgres:test@127.0.0.1:55432/relore_test make test
 ```
 
 `pgvector/pgvector:pg16` rather than plain `postgres`, so migration 2 applies in full. CI
@@ -360,35 +360,35 @@ inline script.
 To look at an index by hand:
 
 ```bash
-export GHLORE_DATABASE_URL=sqlite:///ghlore.db     # a laptop index
-ghlored migrate && ghlored poll --repo owner/name --once
+export RELORE_DATABASE_URL=sqlite:///relore.db     # a laptop index
+relored migrate && relored poll --repo owner/name --once
 # or a bounded corpus, each thread whole (section 5.5) -- not a small backfill:
-ghlored sample --repo owner/name --since 2026-03-01 --kind issue
-ghlored sample --repo owner/name --since 2026-06-01 --kind pr --merged
-ghlored authority --repo owner/name                # else every MEMBER stays `reported`
-ghlored serve --allow-sqlite                       # refuses SQLite without the flag
-# no GHLORE_API_TOKENS set => loopback only, unless --trust-network says the network in
+relored sample --repo owner/name --since 2026-03-01 --kind issue
+relored sample --repo owner/name --since 2026-06-01 --kind pr --merged
+relored authority --repo owner/name                # else every MEMBER stays `reported`
+relored serve --allow-sqlite                       # refuses SQLite without the flag
+# no RELORE_API_TOKENS set => loopback only, unless --trust-network says the network in
 # front of the process is the perimeter (which is how the deployment runs: Tailscale-only,
 # internal load balancer, read-only responses over public GitHub history)
-# GHLORE_API is not optional here: the client's default is the deployment.
-GHLORE_API=http://localhost:8080 ghlore search "some error text"
+# RELORE_API is not optional here: the client's default is the deployment.
+RELORE_API=http://localhost:8080 relore search "some error text"
 ```
 
 ## Layout
 
 | Path | Holds |
 | --- | --- |
-| `ghlore/github/` | REST client, GraphQL client, bulk walks, per-thread fetch |
-| `ghlore/ingest/` | normalize, chunk, extract, `index_thread`, poll, backfill, sample, sweep, plugins |
-| `ghlore/store/` | schema, migrations, repository, **`dialect.py` — the only dialect branch** |
-| `ghlore/search/` | `queries.py` (the vocabulary and the caps), `backends/` one per dialect, `expansion.py` (§6's fan-out and the merge); `ranking.py` is the §6 weights, unbuilt |
-| `ghlore/api/` | `server.py` (routes + the response scrub), `tokens.py` (scope and limits), `schemas.py`, `ui.py` (the §8 page) |
-| `ghlore/code/` | the lens, in **both** binaries; `providers/` is one module per language, `registry.py` the entry-point seam |
-| `ghlore/security/` | untrusted-content envelope, secret redaction |
-| `ghlore/bench/` | §10's benchmark: `dataset.py` the frozen set, `mine.py` the candidates, `judge.py` the label fold, `run.py` the runner and the two baselines |
-| `ghlore/render.py` | dicts in, text out. **One renderer**, shared by the CLI and the UI's raw view — stdlib only, which is what lets it sit on both sides of the boundary |
-| `ghlore/guidance.py` | the prose that describes the verbs. **One owner**, rendered into `--help` and the page, and the source of the verb list `tests/unit/test_prose_surfaces.py` holds `docs/cli.md` and the skill to. Text and a lazy parser read, nothing else |
-| `ghlore/cli.py` | the client. Imports none of the above except `code`, `render` and `security` |
+| `relore/github/` | REST client, GraphQL client, bulk walks, per-thread fetch |
+| `relore/ingest/` | normalize, chunk, extract, `index_thread`, poll, backfill, sample, sweep, plugins |
+| `relore/store/` | schema, migrations, repository, **`dialect.py` — the only dialect branch** |
+| `relore/search/` | `queries.py` (the vocabulary and the caps), `backends/` one per dialect, `expansion.py` (§6's fan-out and the merge); `ranking.py` is the §6 weights, unbuilt |
+| `relore/api/` | `server.py` (routes + the response scrub), `tokens.py` (scope and limits), `schemas.py`, `ui.py` (the §8 page) |
+| `relore/code/` | the lens, in **both** binaries; `providers/` is one module per language, `registry.py` the entry-point seam |
+| `relore/security/` | untrusted-content envelope, secret redaction |
+| `relore/bench/` | §10's benchmark: `dataset.py` the frozen set, `mine.py` the candidates, `judge.py` the label fold, `run.py` the runner and the two baselines |
+| `relore/render.py` | dicts in, text out. **One renderer**, shared by the CLI and the UI's raw view — stdlib only, which is what lets it sit on both sides of the boundary |
+| `relore/guidance.py` | the prose that describes the verbs. **One owner**, rendered into `--help` and the page, and the source of the verb list `tests/unit/test_prose_surfaces.py` holds `docs/cli.md` and the skill to. Text and a lazy parser read, nothing else |
+| `relore/cli.py` | the client. Imports none of the above except `code`, `render` and `security` |
 | `benchmarks/` | §10's evaluation sets, one JSONL per corpus. Data, not code — the header carries the corpus window and every example carries who judged it |
 
 Anything that knows a *particular* project's conventions is an extension, not core (§9).
@@ -412,7 +412,7 @@ touching the schema. In short:
 - **Never tune ranking or run the §10 benchmark on SQLite.** The weights are fitted to
   `ts_rank_cd`; SQLite scores with `bm25`. A number from the wrong backend describes a
   different engine. The benchmark records its backend and refuses to mix.
-- **`ghlored serve` refuses a SQLite URL** without `--allow-sqlite`.
+- **`relored serve` refuses a SQLite URL** without `--allow-sqlite`.
 - **`store/dialect.py` is the only module that may branch on the dialect.** An
   `if dialect ==` in `repository.py` is a bug, and `tests/unit/test_no_dialect_leak.py`
   says so.
@@ -428,12 +428,12 @@ A green suite that only ever ran SQLite is a green suite about the wrong databas
 ## Traps
 
 **A derived column is null until something re-derives it, and the fallback is the old
-behaviour.** `thread_files.source` (migration 7, huggingface/ghlore#17) is filled by
+behaviour.** `thread_files.source` (migration 7, huggingface/relore#17) is filled by
 `extract_signals`, so on an index migrated but not re-derived every row reads null and
 `_files_by_provenance` falls back to inferring from `change_type` — which cannot tell an
 inline comment's anchor from a filename in prose, exactly the conflation the column exists
-to end. The deploy is not the fix; `ghlored derive` is. Same shape as `trust` after
-`ghlored authority`, and as `thread_links` after §13.3.
+to end. The deploy is not the fix; `relored derive` is. Same shape as `trust` after
+`relored authority`, and as `thread_links` after §13.3.
 
 **The GitHub API lies about its own limits, quietly.** All five were measured, and a
 backfill written without them looks successful while missing most of the corpus:
@@ -481,7 +481,7 @@ stays for ever — so `reconcile_documents` compares the hash **and**
 has the same shape of input, and the same failure without it.
 
 **`MEMBER` means "we have not asked yet", not "no".** On an org-owned repository the real
-maintainers report as `MEMBER` because their access comes through a team. Until `ghlored
+maintainers report as `MEMBER` because their access comes through a team. Until `relored
 authority` runs, every one of them is `reported` and the `authoritative` tier is **empty** —
 which does not look like a bug, it looks like a repository with no maintainers. Run the pass
 after any backfill of a new repository.
@@ -492,7 +492,7 @@ indexes a thread that moved inside the window **without the older comments that 
 it** — a hole inside the retrievable unit, and the discussion is what §10's failure slice
 is ground truth for. `huggingface/transformers` #17611 is the shape of it: opened 2022,
 updated last month, 124 documents, of which a bulk `since` walk would have staged two. So
-`ghlored sample` fetches thread by thread (§5.5) — the expensive path per thread and the
+`relored sample` fetches thread by thread (§5.5) — the expensive path per thread and the
 cheap one at 2,000 threads. It checkpoints under **its own** pass name (`sample:issue`,
 `sample:pr`) and never `threads`, because that mark is shared with the poll and the
 backfill: moving it would tell them the years before the window were covered. And it
@@ -506,7 +506,7 @@ advancing past a failure skips that thread for ever while the pass looks healthy
 capped walk bounds how far the mark may move, because the uncapped second list query can
 surface a thread far newer than anything the capped one reached.
 
-**A full `ghlored derive` derives the threads that are *staged*, not every staged
+**A full `relored derive` derives the threads that are *staged*, not every staged
 number.** A comment walk stages a comment under its thread number, and the thread can be
 deleted or transferred upstream before the thread walk sees it — so a number can hold
 comments and no issue. 20 of the 47,928 numbers staged for `huggingface/transformers` are
@@ -523,7 +523,7 @@ not skipped; re-indexing an unchanged thread performs **zero** document writes.
 
 **Empty is not an error.** No results is exit 0 with an empty result, always. Two places
 this is easy to break: a daemon that is down must not read as an empty index (the client
-tells the two apart and says which), and `ghlore map` with no provider installed used to
+tells the two apart and says which), and `relore map` with no provider installed used to
 walk zero files and return an empty map at exit 0 — a missing install wearing a real
 answer, which is what `registry.require_any` exists for.
 
@@ -646,7 +646,7 @@ oversight. To change one, change the plan first and say what measurement changed
 | LLM-generated summaries | §1 — v1 writes only mechanically-derived text |
 | An MCP server | §1 — build it when a shell-less client exists |
 | Ranking work before the benchmark | §10 — score against GitHub search *and* the agent's own `grep` |
-| A **committed** code index (`.ghlore/` in the indexed repo) | §1 — it moves the staleness defect inside the client, and makes repo-supplied *structure* an untrusted input steering `defs`/`refs`. A **git-ignored** cache is a separate question with profiling behind it: 0.14 s over 73 files, ~10 s over 2,990 |
+| A **committed** code index (`.relore/` in the indexed repo) | §1 — it moves the staleness defect inside the client, and makes repo-supplied *structure* an untrusted input steering `defs`/`refs`. A **git-ignored** cache is a separate question with profiling behind it: 0.14 s over 73 files, ~10 s over 2,990 |
 
 ## Writing tests
 

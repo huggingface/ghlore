@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ghlore.ingest.normalize import normalize, redact
+from relore.ingest.normalize import normalize, redact
 
 
 def test_provider_prefixed_tokens_are_replaced_with_a_typed_placeholder() -> None:
@@ -28,8 +28,8 @@ def test_private_key_blocks_go_whole() -> None:
 
 
 def test_url_credentials_keep_the_sentence_readable() -> None:
-    clean, found = redact("postgresql://app:hunter2@db.internal/ghlore")
-    assert clean == "postgresql://app:[REDACTED:url-credentials]@db.internal/ghlore"
+    clean, found = redact("postgresql://app:hunter2@db.internal/relore")
+    assert clean == "postgresql://app:[REDACTED:url-credentials]@db.internal/relore"
     assert found == {"url-credentials": 1}
     assert "hunter2" not in clean
 
@@ -99,7 +99,7 @@ def test_a_bare_postgresql_url_is_pointed_at_psycopg3() -> None:
     Without this the URL printed in the README fails with `ModuleNotFoundError: psycopg2`,
     which tells the reader nothing about what to do.
     """
-    from ghlore.store.dialect import normalize_url
+    from relore.store.dialect import normalize_url
 
     assert normalize_url("postgresql://host/db") == "postgresql+psycopg://host/db"
     assert normalize_url("postgres://host/db") == "postgresql+psycopg://host/db"

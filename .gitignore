@@ -9,7 +9,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# ghlored's working clones (the code lens, build-plan section 1). These are full git
+# relored's working clones (the code lens, build-plan section 1). These are full git
 # repos of other projects -- never commit them here.
 /clones/
 

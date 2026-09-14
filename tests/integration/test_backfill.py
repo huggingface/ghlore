@@ -7,9 +7,9 @@ import pytest
 from fake_github import FakeGitHub, FakeGraphQL
 from sqlalchemy import Engine, func, select
 
-from ghlore.ingest.backfill import DERIVE_PASS, FILES_PASS, backfill
-from ghlore.store import repository as repo_layer
-from ghlore.store import schema as s
+from relore.ingest.backfill import DERIVE_PASS, FILES_PASS, backfill
+from relore.store import repository as repo_layer
+from relore.store import schema as s
 
 REPO = "owner/name"
 
@@ -103,7 +103,7 @@ def test_each_pass_checkpoints_independently(engine: Engine, fake: FakeGitHub) -
 
 def test_the_thread_walk_shares_its_mark_with_the_poll(engine: Engine, fake: FakeGitHub) -> None:
     """They are the same logical pass, so a finished backfill hands over with no gap."""
-    from ghlore.ingest.poll import PASS
+    from relore.ingest.poll import PASS
 
     _run(engine, fake, derive=False)
     with engine.connect() as conn:
@@ -225,7 +225,7 @@ def test_review_bodies_are_not_duplicated_when_both_sources_have_them(
     engine: Engine, fake: FakeGitHub
 ) -> None:
     """A poll stages REST reviews; a later backfill stages the GraphQL node. One document."""
-    from ghlore.ingest.index_thread import index_thread
+    from relore.ingest.index_thread import index_thread
 
     with fake.client() as client:
         index_thread(engine, client, REPO, 2)

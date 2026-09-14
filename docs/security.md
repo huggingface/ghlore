@@ -19,6 +19,6 @@
   SQLite index outright without an explicit flag: a laptop index served to a team is how
   "the ranking is bad" becomes unfalsifiable.
 - **The client cannot open a database connection**, because the code to do so is not in it —
-  asserted by a test over the import graph. `ghlore` is the binary agents get.
+  asserted by a test over the import graph. `relore` is the binary agents get.
 
 The GitHub token the daemon needs is `issues:read` + `pull_requests:read`. Never write.

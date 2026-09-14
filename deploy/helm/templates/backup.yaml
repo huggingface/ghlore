@@ -4,7 +4,7 @@
 #
 # **What this is actually insuring against, because it changes how much it is
 # worth.** The index is *derived*: `raw_objects` holds every API payload verbatim
-# and `ghlored derive` rebuilds threads, documents and every signal table from it
+# and `relored derive` rebuilds threads, documents and every signal table from it
 # with no network (build-plan section 5.0). So losing the volume costs a re-fetch,
 # not the corpus -- unless it also loses `raw_objects`, which is the expensive
 # part: a day of rate-limited API budget for a large repository.

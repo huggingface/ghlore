@@ -11,8 +11,8 @@ import pytest
 from fake_github import FakeGitHub
 from sqlalchemy import Engine
 
-from ghlore.bench import mine
-from ghlore.ingest.index_thread import index_thread
+from relore.bench import mine
+from relore.ingest.index_thread import index_thread
 
 REPO = "owner/name"
 

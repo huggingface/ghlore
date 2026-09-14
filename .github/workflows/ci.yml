@@ -23,7 +23,7 @@ jobs:
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_PASSWORD: test
-          POSTGRES_DB: ghlore_test
+          POSTGRES_DB: relore_test
         ports: ["5432:5432"]
         options: >-
           --health-cmd pg_isready
@@ -31,7 +31,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      GHLORE_TEST_POSTGRES_URL: postgresql://postgres:test@localhost:5432/ghlore_test
+      RELORE_TEST_POSTGRES_URL: postgresql://postgres:test@localhost:5432/relore_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,7 +54,7 @@ jobs:
         run: |
           set -o pipefail
           .venv/bin/pytest -q -rs tests/integration | tee /tmp/parity.txt
-          if grep -q "GHLORE_TEST_POSTGRES_URL to run the Postgres half" /tmp/parity.txt; then
+          if grep -q "RELORE_TEST_POSTGRES_URL to run the Postgres half" /tmp/parity.txt; then
             echo "::error::the Postgres parity tests were skipped"
             exit 1
           fi

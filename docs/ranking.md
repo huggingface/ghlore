@@ -41,7 +41,7 @@ contains the deployment's own agent's comments, and returning one as prior discu
 that agent's unreviewed output its own evidence.
 
 The **per-query-kind floors** are live too — a `precedent` query requires authority,
-because merging is the maintainer's act — together with the `ghlored authority` pass they
+because merging is the maintainer's act — together with the `relored authority` pass they
 depend on. Until each author's repository permission is resolved, a rationale floor of
 "maintainers only" filters out the very comments it exists to find, because on an org-owned
 repository the real maintainers read as an unresolved `MEMBER`.
@@ -70,7 +70,7 @@ caveats:
    mean something. The bot-reviews corpus (diffusers and mlinter, where bot review comments
    are 4.7% and 54% of the traffic against transformers' 0.9%) exists purely to make that
    slice wider than seven examples.
-2. **Unranked, `ghlore` lost that slice on both corpora** — 0.286 and 0.222 — and the cause
+2. **Unranked, `relore` lost that slice on both corpora** — 0.286 and 0.222 — and the cause
    was *under-retrieval*, not ranking: 6 of 9 queries returned nothing, because the query is
    drawn from the bot's finding and that finding is the only document carrying all its
    terms, which §6.2 refuses to read. Search ANDs content terms, so it asked

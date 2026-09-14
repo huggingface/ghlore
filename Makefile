@@ -1,4 +1,4 @@
-# ghlore -- see AGENTS.md. Linting is ruff, full stop; there is no type-check gate.
+# relore -- see AGENTS.md. Linting is ruff, full stop; there is no type-check gate.
 #
 # The venv is built on the LOWEST supported interpreter on purpose: the project floor is
 # 3.10, and developing on it is what catches accidental 3.11+ syntax before CI does.
@@ -13,7 +13,7 @@ STAMP := $(VENV)/.installed
 .PHONY: help install format lint test check clean
 
 help:
-	@echo "make install  create $(VENV) and install ghlore[dev] (editable)"
+	@echo "make install  create $(VENV) and install relore[dev] (editable)"
 	@echo "make format   ruff format + ruff check --fix"
 	@echo "make lint     ruff, read-only"
 	@echo "make test     pytest"
@@ -31,12 +31,12 @@ $(STAMP): pyproject.toml
 install: $(STAMP)
 
 format: $(STAMP)
-	$(VENV)/bin/ruff format ghlore tests
-	$(VENV)/bin/ruff check --fix ghlore tests
+	$(VENV)/bin/ruff format relore tests
+	$(VENV)/bin/ruff check --fix relore tests
 
 lint: $(STAMP)
-	$(VENV)/bin/ruff format --check ghlore tests
-	$(VENV)/bin/ruff check ghlore tests
+	$(VENV)/bin/ruff format --check relore tests
+	$(VENV)/bin/ruff check relore tests
 
 test: $(STAMP)
 	$(VENV)/bin/pytest -q

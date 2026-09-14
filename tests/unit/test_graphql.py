@@ -8,7 +8,7 @@ import httpx
 import pytest
 from fake_github import FakeGitHub, FakeGraphQL
 
-from ghlore.github.graphql import (
+from relore.github.graphql import (
     BATCH,
     GraphQLClient,
     GraphQLError,

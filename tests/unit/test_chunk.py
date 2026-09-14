@@ -9,7 +9,7 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from ghlore.ingest.chunk import MAX_CHUNK_CHARS, chunk, content_hash
+from relore.ingest.chunk import MAX_CHUNK_CHARS, chunk, content_hash
 
 
 def test_a_short_body_is_one_document() -> None:
@@ -60,7 +60,7 @@ def test_the_chunking_version_is_inside_the_hash() -> None:
 def test_the_hash_is_stable_across_processes() -> None:
     here = content_hash("a body with an identifier: forward()")
     code = (
-        "from ghlore.ingest.chunk import content_hash;"
+        "from relore.ingest.chunk import content_hash;"
         "print(content_hash('a body with an identifier: forward()'))"
     )
     # A different hash seed is the classic way this breaks -- `hash()` is randomized per

@@ -18,8 +18,8 @@ import pytest
 from fake_github import FakeGitHub
 from sqlalchemy import Engine
 
-from ghlore.ingest.index_thread import index_thread
-from ghlore.search import RankSpec, SearchQuery, open_backend, ranking, search_expanded
+from relore.ingest.index_thread import index_thread
+from relore.search import RankSpec, SearchQuery, open_backend, ranking, search_expanded
 
 REPO = "owner/name"
 ALPHA = "src/alpha.py"

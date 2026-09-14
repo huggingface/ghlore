@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run one long `ghlored` pass over a repository, as a Kubernetes Job.
+# Run one long `relored` pass over a repository, as a Kubernetes Job.
 #
 # **Not `kubectl exec`.** Build plan section 3 sizes a backfill of a large repository
 # at about a restartable *day*: ~3,600 REST requests and a GraphQL pass that is
@@ -19,7 +19,7 @@ set -euo pipefail
 # The verb, from the wrapper that called us (backfill.sh) or from argv[1]. Read
 # before the option loop, so `--help` is answered by the usage text below rather
 # than by a complaint about a missing verb.
-verb="${GHLORED_PASS:-}"
+verb="${RELORED_PASS:-}"
 if [[ -z "$verb" && "${1:-}" != -* ]]; then
   verb="${1:-}"
   shift || true
@@ -46,7 +46,7 @@ Options:
   -r, --release NAME      default: ghlore
       --context NAME      kubectl context
   -f, --follow            stream the logs after creating the Job
-      --                  everything after this is passed to `ghlored VERB`
+      --                  everything after this is passed to `relored VERB`
   -h, --help              this
 
 Examples:
@@ -87,7 +87,7 @@ job="${release}-${verb}-${slug}"
 image="$("${kube[@]}" get deploy "$release" -o jsonpath='{.spec.template.spec.containers[0].image}')"
 [[ -n "$image" ]] || { echo "error: could not read the image from deploy/$release" >&2; exit 2; }
 db_url="$("${kube[@]}" get deploy "$release" \
-  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="GHLORE_DATABASE_URL")].value}')"
+  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="RELORE_DATABASE_URL")].value}')"
 secret="$("${kube[@]}" get deploy "$release" \
   -o jsonpath='{.spec.template.spec.containers[0].envFrom[1].secretRef.name}')"
 config="$("${kube[@]}" get deploy "$release" \
@@ -101,7 +101,7 @@ echo
 
 "${kube[@]}" delete job "$job" --ignore-not-found >/dev/null
 
-# `-v` is not optional in practice. `ghlored` defaults to WARNING and every
+# `-v` is not optional in practice. `relored` defaults to WARNING and every
 # progress message it has is INFO, so without this a day-long backfill stages
 # hundreds of thousands of objects and prints nothing at all -- the only way to
 # tell a healthy run from a wedged one is to query the database.
@@ -116,7 +116,7 @@ metadata:
   name: $job
   namespace: $namespace
   labels:
-    app: ghlore
+    app: relore
     component: pass
 spec:
   # Generous: the pass is resumable, so a retry costs a re-walk of the remainder
@@ -127,7 +127,7 @@ spec:
   template:
     metadata:
       labels:
-        app: ghlore
+        app: relore
         component: pass
     spec:
       restartPolicy: OnFailure
@@ -146,7 +146,7 @@ spec:
                 secretKeyRef:
                   name: $secret
                   key: POSTGRES_PASSWORD
-            - name: GHLORE_DATABASE_URL
+            - name: RELORE_DATABASE_URL
               value: "$db_url"
           resources:
             requests: {cpu: 200m, memory: 512Mi}

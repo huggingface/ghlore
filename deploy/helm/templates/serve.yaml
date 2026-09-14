@@ -1,11 +1,11 @@
 #------------------------------------------------------------------------------
-# `ghlored serve` -- the HTTP JSON API and the section 8 web UI.
+# `relored serve` -- the HTTP JSON API and the section 8 web UI.
 #
 # Two guardrails the daemon enforces itself (build-plan section 13.1 #6) and this
 # chart has to respect:
 #   * it refuses a SQLite URL, which cannot arise here;
 #   * with no tokens configured it binds loopback only. So `--host 0.0.0.0` is
-#     paired with GHLORE_API_TOKENS from the Secret, and a release that forgets
+#     paired with RELORE_API_TOKENS from the Secret, and a release that forgets
 #     the token gets a pod that answers nothing rather than an open index.
 #------------------------------------------------------------------------------
 apiVersion: apps/v1
@@ -40,7 +40,7 @@ spec:
     spec:
       {{- if or .Values.labels.enabled .Values.clones.enabled }}
       # The image runs as uid 10001 and a CSI volume arrives root-owned, so without this
-      # `ghlored clone` cannot write -- nor can section 8's label append.
+      # `relored clone` cannot write -- nor can section 8's label append.
       securityContext:
         fsGroup: 10001
         # Or the kubelet re-chowns every file of a large clone on each start.
@@ -49,7 +49,7 @@ spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets: {{ toYaml . | nindent 8 }}
       {{- end }}
-      # `ghlored migrate`, as an init container rather than a Helm hook.
+      # `relored migrate`, as an init container rather than a Helm hook.
       #
       # It was a `pre-install` hook, and that cannot work here. Helm runs every
       # pre-install hook *before* ordinary resources, so the hook's pod referenced a
@@ -78,21 +78,21 @@ spec:
               until pg_isready -h {{ include "name" . }}-postgres -U {{ .Values.postgres.user }} >/dev/null 2>&1; do
                 echo "waiting for postgres"; sleep 3
               done
-              exec ghlored {{ if ge (int .Values.verbosity) 1 }}-v {{ end }}migrate
+              exec relored {{ if ge (int .Values.verbosity) 1 }}-v {{ end }}migrate
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.existingSecret }}
                   key: POSTGRES_PASSWORD
-            - name: GHLORE_DATABASE_URL
-              value: {{ include "ghlore.databaseUrl" . | quote }}
+            - name: RELORE_DATABASE_URL
+              value: {{ include "relore.databaseUrl" . | quote }}
           resources: {{ toYaml .Values.migrate.resources | nindent 12 }}
       containers:
         - name: serve
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: [{{ include "ghlore.verbosity" . }}"serve", "--host", "0.0.0.0", "--port", "8080"{{ if .Values.api.trustNetwork }}, "--trust-network"{{ end }}]
+          args: [{{ include "relore.verbosity" . }}"serve", "--host", "0.0.0.0", "--port", "8080"{{ if .Values.api.trustNetwork }}, "--trust-network"{{ end }}]
           ports:
             - name: http
               containerPort: 8080
@@ -113,14 +113,14 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.existingSecret }}
                   key: POSTGRES_PASSWORD
-            - name: GHLORE_DATABASE_URL
-              value: {{ include "ghlore.databaseUrl" . | quote }}
+            - name: RELORE_DATABASE_URL
+              value: {{ include "relore.databaseUrl" . | quote }}
             {{- if .Values.api.trustNetwork }}
             # Emptied *after* `envFrom`, so a token left behind in the secret store
             # cannot quietly re-enable authentication on a deployment whose perimeter is
             # the network. The absence is then a property of this release, not of what
             # somebody remembered to delete in Infisical.
-            - name: GHLORE_API_TOKENS
+            - name: RELORE_API_TOKENS
               value: ""
             {{- end }}
           {{- if or .Values.labels.enabled .Values.clones.enabled }}
@@ -192,7 +192,7 @@ spec:
       targetPort: http
 {{- if .Values.clones.enabled }}
 ---
-# ReadWriteOnce, and the serve pod holds it -- which is why `ghlored clone` is an
+# ReadWriteOnce, and the serve pod holds it -- which is why `relored clone` is an
 # `exec` into that pod and not a Job, and why `serve.replicas` stays 1.
 apiVersion: v1
 kind: PersistentVolumeClaim

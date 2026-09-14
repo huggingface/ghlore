@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from ghlore.ingest.relationships import extract_links
+from relore.ingest.relationships import extract_links
 
 REPO = "owner/name"
 

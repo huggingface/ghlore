@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from ghlore.ingest.extract import (
+from relore.ingest.extract import (
     error_query_form,
     extract_signals,
     normalize_error_message,

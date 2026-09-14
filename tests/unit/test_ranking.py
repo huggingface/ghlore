@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from ghlore.search import ranking
-from ghlore.search.queries import QUERY_KINDS, SearchQuery
-from ghlore.search.ranking import (
+from relore.search import ranking
+from relore.search.queries import QUERY_KINDS, SearchQuery
+from relore.search.ranking import (
     HALF_LIFE_DAYS,
     WEIGHTS,
     RankSpec,

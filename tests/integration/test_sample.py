@@ -1,4 +1,4 @@
-"""``ghlored sample`` -- section 10's corpus: bounded, and every thread complete.
+"""``relored sample`` -- section 10's corpus: bounded, and every thread complete.
 
 Runs on both dialects. The load-bearing tests here are
 :func:`test_a_sample_does_not_advance_the_thread_walks_mark` and
@@ -14,10 +14,10 @@ import pytest
 from fake_github import FakeGitHub
 from sqlalchemy import Engine, select
 
-from ghlore.ingest.poll import poll_once
-from ghlore.ingest.sample import pass_name, sample
-from ghlore.store import repository as repo_layer
-from ghlore.store import schema as s
+from relore.ingest.poll import poll_once
+from relore.ingest.sample import pass_name, sample
+from relore.store import repository as repo_layer
+from relore.store import schema as s
 
 REPO = "owner/name"
 WINDOW = dt.datetime(2026, 6, 1, tzinfo=dt.timezone.utc)
@@ -159,7 +159,7 @@ def test_the_checkpoint_stops_at_the_first_failure(
     for number in (1, 2, 3):
         fake.add_issue(number, updated_at=f"2026-07-0{number}T00:00:00Z")
 
-    import ghlore.ingest.sample as sample_module
+    import relore.ingest.sample as sample_module
 
     real = sample_module.fetch_thread
 
@@ -286,7 +286,7 @@ def test_the_floor_is_declared_before_the_first_thread_is_fetched(
     undeclared floor is the whole failure this table exists to prevent."""
     fake.add_issue(1, updated_at="2026-07-01T00:00:00Z")
 
-    import ghlore.ingest.sample as sample_module
+    import relore.ingest.sample as sample_module
 
     monkeypatch.setattr(
         sample_module, "fetch_thread", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))

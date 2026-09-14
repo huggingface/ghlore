@@ -9,9 +9,9 @@ import pytest
 from fake_github import FakeGitHub
 from sqlalchemy import Engine
 
-from ghlore.bench import run as br
-from ghlore.bench.dataset import Corpus, Dataset, Example, Relevant
-from ghlore.ingest.index_thread import index_thread
+from relore.bench import run as br
+from relore.bench.dataset import Corpus, Dataset, Example, Relevant
+from relore.ingest.index_thread import index_thread
 
 REPO = "owner/name"
 

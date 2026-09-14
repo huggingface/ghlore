@@ -1,10 +1,10 @@
-# ghlore — GitHub project memory
+# relore — GitHub project memory
 
 **Every codebase has lore. Ask it, then check it against the code.**
 
-<img src="docs/ghlore.png" alt="logo" width="200">
+<img src="docs/relore.png" alt="logo" width="200">
 
-`ghlore` indexes a repository's complete issue and pull-request history and keeps a working
+`relore` indexes a repository's complete issue and pull-request history and keeps a working
 clone beside it, both served over one HTTP API. Three questions, in the order an agent hits
 them:
 
@@ -30,29 +30,29 @@ argument for this over a search box.
 Six agents have run it cold on the same `transformers` bug, one per release, on `--help`
 alone and with no memory of the runs before. They filed 39 issues against the tool; most
 are fixed, each run checking the last one's from the outside.
-[#8](https://github.com/huggingface/ghlore/issues/8) is the record.
+[#8](https://github.com/huggingface/relore/issues/8) is the record.
 
 ## Try it
 
 ```bash
-pip install git+https://github.com/huggingface/ghlore   # no PyPI release yet
-export GHLORE_API=https://your-ghlore  # a running `ghlored serve`
-export GHLORE_REPO=owner/name          # the default for --repo
-export GHLORE_TOKEN=…                  # if that daemon requires one
+pip install git+https://github.com/huggingface/relore   # no PyPI release yet
+export RELORE_API=https://your-relore  # a running `relored serve`
+export RELORE_REPO=owner/name          # the default for --repo
+export RELORE_TOKEN=…                  # if that daemon requires one
 
-ghlore inflight 47720 --repo owner/name              # ask this one first
-ghlore why src/model.py:90 --repo owner/name         # what was said about this line
-ghlore search "AttributeError: 'NoneType' object has no attribute 'shape'" --kind failure
-ghlore search "why is this cast here" --kind rationale --file src/model.py
-ghlore search --symbol GemmaRotaryEmbedding          # every mention, exactly matched
-ghlore copies compute_default_rope_parameters --repo owner/name   # which copies diverge
+relore inflight 47720 --repo owner/name              # ask this one first
+relore why src/model.py:90 --repo owner/name         # what was said about this line
+relore search "AttributeError: 'NoneType' object has no attribute 'shape'" --kind failure
+relore search "why is this cast here" --kind rationale --file src/model.py
+relore search --symbol GemmaRotaryEmbedding          # every mention, exactly matched
+relore copies compute_default_rope_parameters --repo owner/name   # which copies diverge
 ```
 
 `--repo` is required on a bare number or path whenever the daemon serves more than one
-repository: it refuses rather than guessing which project you meant. `GHLORE_REPO` is the
+repository: it refuses rather than guessing which project you meant. `RELORE_REPO` is the
 default that makes the flag a per-call override instead of a per-call tax.
 
-`ghlore --help` is the reference — every verb, the order to reach for them in, and the
+`relore --help` is the reference — every verb, the order to reach for them in, and the
 environment. More worked queries, and the four ways a healthy index returns nothing:
 [`docs/cli.md`](docs/cli.md). There is no MCP server on purpose: any agent with a shell can
 already call an HTTP API.
@@ -64,7 +64,7 @@ already call an HTTP API.
 | **Comment-level results** | the matching document with its author, trust tier, age and URL — not a thread number to go re-read |
 | **Exact signals** | errors, files, symbols, test ids, shas, extracted at ingest and repeatable as filters |
 | **Trust tiers** | maintainer / contributor / bot, as a filter rather than a weight |
-| **Schema to join on** | "which threads touched this file", and a bug and its merged fix as one record — `search --file` under-returns the newest PRs touching a path until [#48](https://github.com/huggingface/ghlore/issues/48) lands |
+| **Schema to join on** | "which threads touched this file", and a bug and its merged fix as one record — `search --file` under-returns the newest PRs touching a path until [#48](https://github.com/huggingface/relore/issues/48) lands |
 | **The code, server-side** | `why PATH:LINE`, `grep`, `copies`, `symbol`, and `defs`/`refs` with `--repo`, against a working clone the daemon keeps |
 | **Throughput** | every query is a Postgres query and makes no GitHub request; ten agents in parallel cost the same as one |
 

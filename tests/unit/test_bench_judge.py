@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from ghlore.bench.dataset import Dataset, Example
-from ghlore.bench.judge import fold
+from relore.bench.dataset import Dataset, Example
+from relore.bench.judge import fold
 
 
 def _label(**kwargs) -> dict:

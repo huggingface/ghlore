@@ -15,8 +15,8 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ghlore.github.client import GitHubClient
-from ghlore.github.graphql import GraphQLClient
+from relore.github.client import GitHubClient
+from relore.github.graphql import GraphQLClient
 
 BASE = "https://api.github.test"
 

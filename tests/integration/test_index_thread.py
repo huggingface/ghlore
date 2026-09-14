@@ -11,9 +11,9 @@ import pytest
 from fake_github import FakeGitHub
 from sqlalchemy import Engine, func, select
 
-from ghlore.ingest.chunk import MAX_CHUNK_CHARS
-from ghlore.ingest.index_thread import derive_thread, index_thread
-from ghlore.store import schema as s
+from relore.ingest.chunk import MAX_CHUNK_CHARS
+from relore.ingest.index_thread import derive_thread, index_thread
+from relore.store import schema as s
 
 REPO = "owner/name"
 
@@ -177,7 +177,7 @@ def test_extraction_fills_the_signal_tables_from_the_thread_it_derived(
 
     # Both paths came out of prose -- a traceback frame and a node id -- so both are
     # `mentioned`, which is what keeps them out of "what this pull request changed"
-    # (huggingface/ghlore#17).
+    # (huggingface/relore#17).
     assert _signal_rows(engine, s.thread_files) == [
         ("src/mod.py", None, "mentioned"),
         ("tests/test_mod.py", None, "mentioned"),
@@ -279,9 +279,9 @@ def test_the_per_pr_pass_supplies_the_changed_files_and_the_commits(
     the GraphQL node is the only source of a change type or a commit."""
     from fake_github import FakeGraphQL
 
-    from ghlore.github.graphql import fetch_pr_details
-    from ghlore.store import repository as repo_layer
-    from ghlore.store.dialect import utcnow
+    from relore.github.graphql import fetch_pr_details
+    from relore.store import repository as repo_layer
+    from relore.store.dialect import utcnow
 
     pr = fake.add_pr(1, body="no paths in this body")
     pr.files = ["src/mod.py"]
@@ -310,7 +310,7 @@ def test_the_per_pr_pass_supplies_the_changed_files_and_the_commits(
         derive_thread(conn, REPO, 1)
 
     # `changed`: the per-PR pass's diff, which is the only source that answers "did
-    # this thread touch it?" (huggingface/ghlore#17).
+    # this thread touch it?" (huggingface/relore#17).
     assert _signal_rows(engine, s.thread_files) == [("src/mod.py", "MODIFIED", "changed")]
     assert _signal_rows(engine, s.thread_commits) == [("abc1234", "fix the mask")]
 
@@ -507,9 +507,9 @@ def test_pruning_leaves_other_passes_staging_alone(engine: Engine, fake: FakeGit
     not a stand-in -- adding ``pr_details`` to a pruning path has to fail here."""
     from fake_github import FakeGraphQL
 
-    from ghlore.github.graphql import fetch_pr_details
-    from ghlore.store.dialect import utcnow
-    from ghlore.store.repository import stage_raw
+    from relore.github.graphql import fetch_pr_details
+    from relore.store.dialect import utcnow
+    from relore.store.repository import stage_raw
 
     pr = fake.add_pr(1)
     pr.files = ["src/mod.py"]
@@ -555,7 +555,7 @@ def test_a_configured_bot_account_is_the_machine_tier(
     admissible evidence. A deployment that indexes its own agent's comments and leaves this
     empty has reintroduced what section 11 refused.
     """
-    monkeypatch.setenv("GHLORE_BOT_ACCOUNTS", "HuggingFaceDocBuilderDev, someotherbot")
+    monkeypatch.setenv("RELORE_BOT_ACCOUNTS", "HuggingFaceDocBuilderDev, someotherbot")
     pr = fake.add_pr(1)
     fake.add_comment(
         pr,
@@ -589,7 +589,7 @@ def test_the_bot_list_is_case_insensitive_and_empty_by_default(
     Empty is legal: it is the default, and it is why section 15.2 lists configuring this as
     a deployment step rather than a nicety.
     """
-    monkeypatch.setenv("GHLORE_BOT_ACCOUNTS", "huggingfacedocbuilderdev")
+    monkeypatch.setenv("RELORE_BOT_ACCOUNTS", "huggingfacedocbuilderdev")
     pr = fake.add_pr(1)
     fake.add_comment(pr, 100, "boilerplate", author="HuggingFaceDocBuilderDev", assoc="MEMBER")
     _index(engine, fake, 1)
@@ -600,7 +600,7 @@ def test_the_bot_list_is_case_insensitive_and_empty_by_default(
         ).scalar_one()
     assert trust == "machine"
 
-    monkeypatch.delenv("GHLORE_BOT_ACCOUNTS")
+    monkeypatch.delenv("RELORE_BOT_ACCOUNTS")
     _index(engine, fake, 1)  # re-derive with no list configured
     with engine.connect() as conn:
         trust = conn.execute(
@@ -624,10 +624,10 @@ def test_a_number_with_comments_but_no_thread_does_not_stop_a_full_rederive(
     die at the same number on every restart: a pass that restarts for ever and never
     progresses, which is exactly what section 5.2 says to assert against.
     """
-    from ghlore import daemon
-    from ghlore.ingest.timestamps import parse_timestamp
-    from ghlore.store import repository as repo_layer
-    from ghlore.store.dialect import utcnow
+    from relore import daemon
+    from relore.ingest.timestamps import parse_timestamp
+    from relore.store import repository as repo_layer
+    from relore.store.dialect import utcnow
 
     fake.add_issue(1, body="a real thread")
     _index(engine, fake, 1)
@@ -654,4 +654,4 @@ def test_a_number_with_comments_but_no_thread_does_not_stop_a_full_rederive(
     out = capsys.readouterr().out
     assert "re-derived 1 threads" in out
     # Reported, not silently dropped (build plan section 13.3 #10).
-    assert "skipped 1 numbers" in out and "ghlored sweep" in out
+    assert "skipped 1 numbers" in out and "relored sweep" in out

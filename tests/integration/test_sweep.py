@@ -11,9 +11,9 @@ import pytest
 from fake_github import FakeGitHub
 from sqlalchemy import Engine, select
 
-from ghlore.ingest.poll import poll_once
-from ghlore.ingest.sweep import SWEEP_PASS, sweep
-from ghlore.store import schema as s
+from relore.ingest.poll import poll_once
+from relore.ingest.sweep import SWEEP_PASS, sweep
+from relore.store import schema as s
 
 REPO = "owner/name"
 

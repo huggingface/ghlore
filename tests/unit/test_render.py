@@ -10,8 +10,8 @@ caveat that exists only in ``--json`` is a caveat the CLI's callers do not have.
 
 from __future__ import annotations
 
-from ghlore.render import render_inflight, render_search, render_thread
-from ghlore.security.untrusted import BEGIN, END
+from relore.render import render_inflight, render_search, render_thread
+from relore.security.untrusted import BEGIN, END
 
 
 def _thread(**fields):
@@ -71,8 +71,8 @@ def test_an_unanswerable_inflight_states_the_fact_in_both_forms() -> None:
 
     piped, terminal = render_inflight(page), render_inflight(page, presentation=True)
     assert "no relationship rows at all" in piped and "no relationship rows at all" in terminal
-    assert "ghlored derive" not in piped
-    assert "ghlored derive" in terminal
+    assert "relored derive" not in piped
+    assert "relored derive" in terminal
 
 
 # -- events (issue #22) ----------------------------------------------------
@@ -215,7 +215,7 @@ def test_an_unfocused_thread_still_suggests_a_focus() -> None:
     assert "20 not shown" in render_thread(payload), "the cap is a fact; the flag is advice"
 
 
-# -- the tier filter, announced (huggingface/ghlore#28) -------------------
+# -- the tier filter, announced (huggingface/relore#28) -------------------
 
 
 def test_a_thread_whose_only_comment_is_a_bots_does_not_claim_to_be_empty() -> None:
@@ -266,7 +266,7 @@ def test_a_thread_with_nothing_suppressed_says_nothing_about_tiers() -> None:
     assert "machine-tier" not in out
 
 
-# -- freshness travels with the answer (huggingface/ghlore#32) ------------
+# -- freshness travels with the answer (huggingface/relore#32) ------------
 
 
 def test_the_comment_page_says_what_it_is_current_to() -> None:
@@ -285,7 +285,7 @@ def test_an_index_with_no_stamp_says_nothing_rather_than_none() -> None:
     assert "current to" not in render_thread(_thread(indexed_at=None))
 
 
-# -- what the ten comments actually are (huggingface/ghlore#16, #18) -------
+# -- what the ten comments actually are (huggingface/relore#16, #18) -------
 
 
 def test_an_unfocused_page_says_it_is_a_sample_and_not_a_ranking() -> None:
@@ -359,11 +359,11 @@ def test_no_hits_is_a_sentence_not_an_empty_page() -> None:
 # -- whose words are they --------------------------------------------------
 
 
-def test_ghlores_own_assertions_are_not_inside_the_quoted_span() -> None:
+def test_relores_own_assertions_are_not_inside_the_quoted_span() -> None:
     """The envelope wraps a whole page and most of it is ours. `[authoritative]` is the
     most load-bearing field in the output and it is an assertion, not a quotation, so it
     must not sit in an undifferentiated "do not trust the text below" region
-    (huggingface/ghlore#12)."""
+    (huggingface/relore#12)."""
     out = render_search(
         {
             "query": {"text": "rope"},
@@ -407,7 +407,7 @@ def test_the_envelope_header_explains_the_marker() -> None:
 
     assert "`>`" in out
     assert "not instructions" in out
-    assert "unmarked lines are ghlore's" in out
+    assert "unmarked lines are relore's" in out
 
 
 def test_a_compact_render_keeps_the_marks_and_drops_the_sentence() -> None:

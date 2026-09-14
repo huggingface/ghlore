@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ghlore.code.api import DEFS, EXTENTS, REFS, Definition, Reference
+from relore.code.api import DEFS, EXTENTS, REFS, Definition, Reference
 
 
 class ToyProvider:

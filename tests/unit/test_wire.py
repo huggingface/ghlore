@@ -10,8 +10,8 @@ from __future__ import annotations
 import pathlib
 import re
 
-from ghlore import __version__
-from ghlore.wire import CLIENT_HEADER, explain
+from relore import __version__
+from relore.wire import CLIENT_HEADER, explain
 
 PYPROJECT = pathlib.Path(__file__).resolve().parents[2] / "pyproject.toml"
 
@@ -66,5 +66,5 @@ def test_the_version_is_written_in_exactly_one_place() -> None:
 
     assert re.search(r'(?m)^version = "', pyproject) is None
     assert 'dynamic = ["version"]' in pyproject
-    assert 'attr = "ghlore.__version__"' in pyproject
+    assert 'attr = "relore.__version__"' in pyproject
     assert __version__ != "0.0.0"

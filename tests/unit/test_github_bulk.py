@@ -7,8 +7,8 @@ import json
 import httpx
 from fake_github import BASE
 
-from ghlore.github.bulk import walk_issue_comments, walk_review_comments
-from ghlore.github.client import GitHubClient
+from relore.github.bulk import walk_issue_comments, walk_review_comments
+from relore.github.client import GitHubClient
 
 
 def _recording_client(seen: list[httpx.URL]) -> GitHubClient:

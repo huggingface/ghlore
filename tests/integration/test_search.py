@@ -14,10 +14,10 @@ import pytest
 from fake_github import FakeGitHub, FakeGraphQL
 from sqlalchemy import Engine
 
-from ghlore.ingest.backfill import backfill
-from ghlore.ingest.index_thread import index_thread
-from ghlore.search import SearchQuery, open_backend
-from ghlore.search.queries import (
+from relore.ingest.backfill import backfill
+from relore.ingest.index_thread import index_thread
+from relore.search import SearchQuery, open_backend
+from relore.search.queries import (
     BODY_SLACK_CHARS,
     MAX_BODY_CHARS,
     MAX_HITS,
@@ -176,7 +176,7 @@ def test_a_thread_view_lists_the_files_extraction_found(engine: Engine, fake: Fa
     Both paths came out of the body, so both are `mentioned` and neither is a changed
     file: a pull request with no per-PR pass has no diff to report, and presenting one is
     what let a filename somebody typed answer a membership question
-    (huggingface/ghlore#17).
+    (huggingface/relore#17).
     """
     fake.add_pr(1, body="see src/mod.py and docs/README.md")
     _index(engine, fake, 1)
@@ -461,7 +461,7 @@ def test_normalizing_whitespace_is_not_truncation(engine: Engine, fake: FakeGitH
     """`snippet` collapses newlines before it cuts anything, so a body well under the cap
     came back two characters shorter than it was stored and the caller -- comparing the
     two lengths -- announced, in 40 characters, that it was withholding two
-    (huggingface/ghlore#31)."""
+    (huggingface/relore#31)."""
     fake.add_issue(1, body="### System Info\n\nlinux\n\n### Reproduction\n\nrun it")
     _index(engine, fake, 1)
 
@@ -477,7 +477,7 @@ def test_a_body_a_sentence_over_the_cap_is_served_rather_than_announced(
 ) -> None:
     """An advisory costs more than the tail it withholds below a sentence's worth -- and
     one that fires when nothing meaningful was withheld is one a reader learns to skip,
-    and then misses the one that matters (huggingface/ghlore#31)."""
+    and then misses the one that matters (huggingface/relore#31)."""
     body = "x" * (MAX_BODY_CHARS + BODY_SLACK_CHARS - 1)
     fake.add_issue(1, body=body)
     _index(engine, fake, 1)
@@ -502,7 +502,7 @@ def test_a_body_past_the_slack_is_still_cut_and_still_says_so(
     assert view.body_chars == MAX_BODY_CHARS + BODY_SLACK_CHARS + 200
 
 
-# -- what the trust floor took out (huggingface/ghlore#28) -----------------
+# -- what the trust floor took out (huggingface/relore#28) -----------------
 
 
 def test_a_thread_counts_the_machine_comments_it_will_not_show(
@@ -536,7 +536,7 @@ def test_a_thread_with_no_bots_suppresses_nothing(engine: Engine, fake: FakeGitH
     assert view.machine_suppressed == 0
 
 
-# -- freshness, per document (huggingface/ghlore#32) -----------------------
+# -- freshness, per document (huggingface/relore#32) -----------------------
 
 
 def test_a_thread_carries_when_it_was_last_rebuilt(engine: Engine, fake: FakeGitHub) -> None:
@@ -572,7 +572,7 @@ def test_a_truncated_changed_file_list_carries_its_denominator(
     assert view.files_collected == 100
     # The numerator and the denominator are now the same quantity: `len(files_changed)`
     # *is* `files_collected`, where the old single array mixed in prose-derived paths and
-    # disagreed with its own count by five (huggingface/ghlore#17).
+    # disagreed with its own count by five (huggingface/relore#17).
     assert len(view.files_changed) == view.files_collected
     assert "src/m104/modeling_m104.py" not in view.files_changed  # and the count says so
 
@@ -592,7 +592,7 @@ def test_a_thread_with_no_changed_file_list_reports_none_rather_than_zero(
 
 
 def test_a_path_is_filed_under_where_it_came_from(engine: Engine, fake: FakeGitHub) -> None:
-    """The three sources, told apart (huggingface/ghlore#17). The diff is what the pull
+    """The three sources, told apart (huggingface/relore#17). The diff is what the pull
     request changed; an inline comment's anchor is also the diff and also not part of the
     collected page; a path in prose is somebody typing, and `config.json` here is the
     shape that answered "did this pull request touch it?" with a wrong yes."""
@@ -630,7 +630,7 @@ def test_the_middle_of_a_long_thread_is_reachable_without_a_focus(
     """First-five-and-last-five is a sample that structurally excludes the middle, and a
     long thread is long because it was contested -- so the comment that settled it is in
     the middle by construction. On `huggingface/transformers#39847` the two that answered
-    the question were at 51 and 79 of 97 and neither was reachable (huggingface/ghlore#16).
+    the question were at 51 and 79 of 97 and neither was reachable (huggingface/relore#16).
     """
     pr = fake.add_pr(1)
     for i in range(40):
@@ -688,7 +688,7 @@ def test_one_comment_is_one_hit_however_many_chunks_it_became(
 ) -> None:
     """A 9,827-character comment is several documents, and two of them came back as two
     `[authoritative]` hits with one URL -- which reads as two people agreeing, and cost
-    two of ten slots (huggingface/ghlore#18). One slot, and it says it is a passage.
+    two of ten slots (huggingface/relore#18). One slot, and it says it is a passage.
     """
     pr = fake.add_pr(1)
     long_comment = "\n\n".join(f"paragraph {i} about rotary embeddings" for i in range(400))

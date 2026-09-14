@@ -14,10 +14,10 @@ import pytest
 from fake_github import FakeGitHub, FakeGraphQL
 from sqlalchemy import Engine, select
 
-from ghlore.ingest.authority import resolve_authority
-from ghlore.ingest.backfill import backfill
-from ghlore.store import repository as repo_layer
-from ghlore.store import schema as s
+from relore.ingest.authority import resolve_authority
+from relore.ingest.backfill import backfill
+from relore.store import repository as repo_layer
+from relore.store import schema as s
 
 REPO = "owner/name"
 
@@ -190,7 +190,7 @@ def test_a_rebuild_reproduces_the_tier(engine: Engine, fake: FakeGitHub) -> None
     fake.permissions["zoe"] = "write"
     _resolve(engine, fake)
 
-    from ghlore.ingest.index_thread import derive_thread
+    from relore.ingest.index_thread import derive_thread
 
     with engine.begin() as conn:
         conn.execute(s.documents.update().values(trust="reported"))

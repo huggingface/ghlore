@@ -17,21 +17,21 @@ from fake_github import FakeGitHub
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
-from ghlore import __version__
-from ghlore.api import ui
-from ghlore.api.server import build_app, serve
-from ghlore.api.tokens import LABEL_SCOPE, Authenticator, Token
-from ghlore.ingest.index_thread import index_thread
-from ghlore.search.queries import MAX_HITS, MAX_SNIPPET_CHARS
-from ghlore.security.untrusted import BEGIN, END, NOTICE
-from ghlore.wire import CLIENT_HEADER, SERVER_HEADER, UPGRADE_REQUIRED
+from relore import __version__
+from relore.api import ui
+from relore.api.server import build_app, serve
+from relore.api.tokens import LABEL_SCOPE, Authenticator, Token
+from relore.ingest.index_thread import index_thread
+from relore.search.queries import MAX_HITS, MAX_SNIPPET_CHARS
+from relore.security.untrusted import BEGIN, END, NOTICE
+from relore.wire import CLIENT_HEADER, SERVER_HEADER, UPGRADE_REQUIRED
 
 REPO = "owner/name"
 
 
 def _serving(app) -> TestClient:
     """Every request declares its client version, because every real client does
-    (:mod:`ghlore.wire`). The handshake tests below override the header themselves."""
+    (:mod:`relore.wire`). The handshake tests below override the header themselves."""
     return TestClient(app, headers={CLIENT_HEADER: __version__})
 
 
@@ -395,7 +395,7 @@ def test_status_says_which_passes_are_working_right_now(client: TestClient, engi
     finishes, and the cursor is cleared on completion. So run-after-ok is a pass in
     flight -- without the cursor in the payload the page could say "indexing" and not
     where it had got to."""
-    from ghlore.store import repository as repo_layer
+    from relore.store import repository as repo_layer
 
     with engine.begin() as conn:
         repo_layer.touch_pass(conn, "owner/name", "threads", ok=True)
@@ -418,7 +418,7 @@ def test_metrics_needs_no_token_and_carries_no_content(engine: Engine, fake) -> 
 
     body = client.get("/metrics").text
 
-    assert "ghlore_threads 1" in body
+    assert "relore_threads 1" in body
     assert "secret-looking" not in body
 
 
@@ -485,7 +485,7 @@ def test_a_daemon_with_tokens_still_explains_them(engine: Engine) -> None:
     body = guarded.get("/").text
 
     assert "/*AUTH*/true" in body
-    assert "GHLORE_API_TOKENS" in body
+    assert "RELORE_API_TOKENS" in body
 
 
 # -- the version handshake --------------------------------------------------
@@ -663,8 +663,8 @@ def test_serve_refuses_a_sqlite_url_without_the_flag() -> None:
 def test_serve_refuses_a_public_bind_with_no_tokens(monkeypatch, tmp_path) -> None:
     """A laptop should not have to mint a token to read its own index; an open index on a
     network is not a default anyone chose."""
-    monkeypatch.delenv("GHLORE_API_TOKENS", raising=False)
-    monkeypatch.delenv("GHLORE_API_TOKENS_FILE", raising=False)
+    monkeypatch.delenv("RELORE_API_TOKENS", raising=False)
+    monkeypatch.delenv("RELORE_API_TOKENS_FILE", raising=False)
 
     with pytest.raises(SystemExit, match="no tokens configured"):
         serve(f"sqlite:///{tmp_path / 'x.db'}", host="0.0.0.0", port=0, allow_sqlite=True)
@@ -682,8 +682,8 @@ def test_serve_binds_wide_without_tokens_only_when_told_the_network_is_the_perim
     It gets as far as binding, so the port is 0 and uvicorn is stubbed out; what is under
     test is the guard, not the server.
     """
-    monkeypatch.delenv("GHLORE_API_TOKENS", raising=False)
-    monkeypatch.delenv("GHLORE_API_TOKENS_FILE", raising=False)
+    monkeypatch.delenv("RELORE_API_TOKENS", raising=False)
+    monkeypatch.delenv("RELORE_API_TOKENS_FILE", raising=False)
     ran: dict[str, object] = {}
     import uvicorn
 

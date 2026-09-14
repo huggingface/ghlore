@@ -12,11 +12,11 @@ import pytest
 from fake_github import FakeGitHub
 from sqlalchemy import Engine, func, select
 
-from ghlore.duration import parse_interval
-from ghlore.ingest import poll as poll_mod
-from ghlore.ingest.poll import PASS, poll_once
-from ghlore.store import repository as repo_layer
-from ghlore.store import schema as s
+from relore.duration import parse_interval
+from relore.ingest import poll as poll_mod
+from relore.ingest.poll import PASS, poll_once
+from relore.store import repository as repo_layer
+from relore.store import schema as s
 
 REPO = "owner/name"
 

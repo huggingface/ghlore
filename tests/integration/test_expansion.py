@@ -17,10 +17,10 @@ import pytest
 from fake_github import FakeGitHub
 from sqlalchemy import Engine
 
-from ghlore.ingest.index_thread import index_thread
-from ghlore.search import SearchQuery, expand, open_backend, search_expanded
-from ghlore.search.expansion import MAX_LEGS, MAX_PER_KIND, RRF_K
-from ghlore.search.queries import MAX_HITS_PER_THREAD
+from relore.ingest.index_thread import index_thread
+from relore.search import SearchQuery, expand, open_backend, search_expanded
+from relore.search.expansion import MAX_LEGS, MAX_PER_KIND, RRF_K
+from relore.search.queries import MAX_HITS_PER_THREAD
 
 REPO = "owner/name"
 

@@ -12,10 +12,10 @@ from __future__ import annotations
 import pytest
 from toy_language import ToyDefsOnlyProvider, ToyProvider
 
-from ghlore.code import registry
-from ghlore.code.defs import definitions, enclosing_symbol
-from ghlore.code.refs import references
-from ghlore.code.repomap import repo_map
+from relore.code import registry
+from relore.code.defs import definitions, enclosing_symbol
+from relore.code.refs import references
+from relore.code.repomap import repo_map
 
 SOURCE = b"""
 class Gemma3Model:
@@ -47,7 +47,7 @@ def only_python():
 @pytest.fixture
 def python():
     try:
-        from ghlore.code.providers.python import PythonProvider
+        from relore.code.providers.python import PythonProvider
     except Exception as exc:  # noqa: BLE001
         pytest.skip(f"tree-sitter-python: {exc}")
     return PythonProvider()

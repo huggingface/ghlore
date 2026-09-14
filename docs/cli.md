@@ -18,7 +18,7 @@ blocks below drop both, to keep the shape of the answer readable.
 
 ## The verbs
 
-`ghlore --help` carries this list too, plus the order to reach for them in — and it arrives
+`relore --help` carries this list too, plus the order to reach for them in — and it arrives
 byte-exact, needs no network and is already installed, which this page is not. Read it
 first; this page is the long form.
 
@@ -37,7 +37,7 @@ first; this page is the long form.
 | `precedent` | completed units of work — milestone 4, a stub today |
 
 Global: `--json` for machine-readable output, `--compact` to trim snippets, `--plain` for
-the piped form on a terminal, `--api` to override `GHLORE_API`. `--json` and `--compact` are
+the piped form on a terminal, `--api` to override `RELORE_API`. `--json` and `--compact` are
 accepted on **either side** of the verb. No results is exit 0 with an empty result, never
 nonzero — so an agent cannot mistake "nothing in the index" for "the tool is broken".
 
@@ -45,11 +45,11 @@ nonzero — so an agent cannot mistake "nothing in the index" for "the tool is b
 
 | | |
 | --- | --- |
-| `GHLORE_API` | the daemon's base URL |
-| `GHLORE_REPO` | the default for `--repo`. Overridden by the flag, per call |
-| `GHLORE_TOKEN` | only if that daemon requires one |
+| `RELORE_API` | the daemon's base URL |
+| `RELORE_REPO` | the default for `--repo`. Overridden by the flag, per call |
+| `RELORE_TOKEN` | only if that daemon requires one |
 
-**Set `GHLORE_REPO` before anything else on a multi-repository daemon.** Six verbs —
+**Set `RELORE_REPO` before anything else on a multi-repository daemon.** Six verbs —
 `thread`, `inflight`, `why`, `symbol`, `grep`, `copies` — refuse a bare number or path
 rather than guess which repository it belongs to, so without a default every call in a
 single-repository session carries `--repo`. One field run passed it on twenty consecutive
@@ -86,12 +86,12 @@ legs and merges them, so the traceback's lines stop being required terms and bec
 separate questions. Either form works:
 
 ```bash
-ghlore search "$(pbpaste)"             # the traceback, expanded server-side
-ghlore search --error "$(pbpaste)"     # the traceback, as a structural filter
-ghlore search "optional mask dtype" --no-expand   # exactly one question, no fan-out
+relore search "$(pbpaste)"             # the traceback, expanded server-side
+relore search --error "$(pbpaste)"     # the traceback, as a structural filter
+relore search "optional mask dtype" --no-expand   # exactly one question, no fan-out
 ```
 
-Expansion also reads a bare identifier as one: `ghlore search "_maybe_import_sdnq"` asks
+Expansion also reads a bare identifier as one: `relore search "_maybe_import_sdnq"` asks
 the symbol filter as well as the text, without you having to say so. It never *loses* a
 result the plain query would have found — the caller's own query is always one of the legs
 — and a query with no identifier, path or traceback in it expands to that single leg and
@@ -102,7 +102,7 @@ costs nothing extra.
 The highest-value shape. It lands on the PR that fixed it:
 
 ```
-$ ghlore --compact search "429" --limit 2
+$ relore --compact search "429" --limit 2
 
 1. huggingface/serge#92 pr  [authoritative]  15d  body  @tarekziade
    Survive a rate limit instead of losing the task to it
@@ -114,8 +114,8 @@ $ ghlore --compact search "429" --limit 2
 `--compact` and `--json` are global flags, accepted on **either side** of the verb:
 
 ```bash
-ghlore --compact search "429"      # both work
-ghlore search "429" --compact
+relore --compact search "429"      # both work
+relore search "429" --compact
 ```
 
 Every hit carries its **age** (`15d`) and its **trust tier** (`[authoritative]`). Age
@@ -124,7 +124,7 @@ changes what a model concludes; authority changes it more (§6.2).
 ## "Is this intentional?" — raise the trust floor
 
 ```
-$ ghlore --compact search "repeat guard" --trust authoritative
+$ relore --compact search "repeat guard" --trust authoritative
 
 2 hits · trust floor: authoritative
 1. huggingface/serge#99 pr  [authoritative]  5d  @tarekziade
@@ -138,17 +138,17 @@ Better, pass `--kind` and let the **server** choose it — a caller then gets th
 without knowing it:
 
 ```bash
-ghlore search "<terms>" --kind rationale   # floor: authoritative
-ghlore search "<terms>" --kind failure     # floor: any human tier -- a stranger's
+relore search "<terms>" --kind rationale   # floor: authoritative
+relore search "<terms>" --kind failure     # floor: any human tier -- a stranger's
                                            # traceback is real evidence
-ghlore search "<terms>" --kind precedent   # authoritative, or any human tier on a merged
+relore search "<terms>" --kind precedent   # authoritative, or any human tier on a merged
                                            # PR: merging is the maintainer's act, so a
                                            # first-time contributor's merged change counts
 ```
 
 `trust_floor` in the `--json` response reports what was actually applied.
 
-Both are inert until `ghlored authority` has run: maintainers whose write access comes
+Both are inert until `relored authority` has run: maintainers whose write access comes
 through a team read as `MEMBER` and stay in `reported`, leaving the `authoritative` tier
 empty.
 
@@ -159,7 +159,7 @@ one as prior discussion makes an agent's unreviewed output its own evidence (§1
 for the tier explicitly is the only way to see them, and they arrive labelled:
 
 ```
-$ ghlore search "review" --trust machine
+$ relore search "review" --trust machine
 
 1. huggingface/serge#26 pr  [MACHINE — our own bot, not evidence]  2mo  @sergereview
 ```
@@ -167,7 +167,7 @@ $ ghlore search "review" --trust machine
 ## One thread, without all of it
 
 ```
-$ ghlore thread 92 --focus "backoff retry" --repo huggingface/serge
+$ relore thread 92 --focus "backoff retry" --repo huggingface/serge
 ...
 -- 10 of 30 comments, best first for 'backoff retry' (2 of 30 carry every term) --
 (20 not shown: a thread is never returnable in full.)
@@ -201,7 +201,7 @@ holds a bot comment for asserted the thread was untouched, which is the one thin
 not mean:
 
 ```
--- 0 of 1 comments, 1 machine-tier suppressed (`ghlore search --trust machine` asks what the bots claimed) --
+-- 0 of 1 comments, 1 machine-tier suppressed (`relore search --trust machine` asks what the bots claimed) --
 ```
 
 `comments_total` counts every comment the thread has; `comments_machine_suppressed` is how
@@ -237,7 +237,7 @@ its first several hundred characters on environment boilerplate and the reproduc
 starts after it.
 
 ```bash
-ghlore thread 48630 --full --repo huggingface/transformers   # the opening post whole
+relore thread 48630 --full --repo huggingface/transformers   # the opening post whole
 ```
 
 ### "Did this pull request touch that file?"
@@ -265,11 +265,11 @@ Merged into one array — which is what it used to be — that last line answere
 question with a wrong yes, and the same file appeared twice in two different spellings.
 
 **`--repo` is required on a bare number when more than one repository is in scope.** The
-deployment indexes three, so a bare `ghlore thread 47720` there answers
+deployment indexes three, so a bare `relore thread 47720` there answers
 
 ```
 400: pass repo=: more than one repository is in scope ['huggingface/serge',
-'huggingface/transformers', 'huggingface/trl'] — or set GHLORE_REPO to default it
+'huggingface/transformers', 'huggingface/trl'] — or set RELORE_REPO to default it
 for the whole session
 ```
 
@@ -279,7 +279,7 @@ authentication: an open daemon resolves the anonymous caller to every indexed re
 so the same rule applies. `search` needs no `--repo` because it spans the whole scope by
 design.
 
-`GHLORE_REPO` is the standing answer: export it once and the flag is a per-call override
+`RELORE_REPO` is the standing answer: export it once and the flag is a per-call override
 rather than a per-call tax.
 
 ## "Is somebody already fixing this?"
@@ -289,7 +289,7 @@ and it prevents an agent's most expensive mistake — writing a patch for someth
 in review.
 
 ```
-$ ghlore inflight 48630 --repo huggingface/transformers
+$ relore inflight 48630 --repo huggingface/transformers
 
 1 thread claims to close huggingface/transformers#48630
 
@@ -304,7 +304,7 @@ means the fix has shipped and the issue may simply need closing.
 
 The **empty** answer is the one to read carefully. `nothing in the index claims to close …`
 is an answer; the same sentence followed by *"this repository has no relationship rows at
-all"* is not — it means the index was derived before the edge existed, and `ghlored derive`
+all"* is not — it means the index was derived before the edge existed, and `relored derive`
 fills it. There is no trust floor here: the deployment's own bot having an open fix is
 precisely the duplicate you must not create.
 
@@ -314,28 +314,28 @@ precisely the duplicate you must not create.
 checkout you are standing in, uncommitted edits included, which is the whole point (§1).
 `defs` and `refs` take `--repo` to ask the daemon's clone of HEAD instead, which is a
 different question: the branch you are mid-edit on is the one thing the index has never
-seen. `map` is local-only. `GHLORE_REPO` deliberately does not switch these two — that is
+seen. `map` is local-only. `RELORE_REPO` deliberately does not switch these two — that is
 a decision about *which tree*, and only the flag makes it.
 
 ```
-$ ghlore defs ghlore/ingest/authority.py
+$ relore defs relore/ingest/authority.py
 43-56        class     AuthorityResult
 59-117       function  resolve_authority
 120-156      function  _resolve_one
 
-$ ghlore refs resolve_authority
-./ghlore/daemon.py:293  name
-./ghlore/daemon.py:298  call
-./ghlore/ingest/authority.py:88  definition
-./ghlore/ingest/backfill.py:117  call
+$ relore refs resolve_authority
+./relore/daemon.py:293  name
+./relore/daemon.py:298  call
+./relore/ingest/authority.py:88  definition
+./relore/ingest/backfill.py:117  call
 -- 9 references in 95 files (5 call, 1 definition, 3 name)
 
-$ ghlore map ghlore/ingest --limit 2
+$ relore map relore/ingest --limit 2
 74 definitions in 12 files, top 2 by name matches per definition
   (a count of the written *name*: same-named definitions share it, so the definition
    count is how much this row overstates)
-  parse_timestamp     function  16 matches / 1 definition   ghlore/ingest/timestamps.py:19
-  iso_utc             function  11 matches / 1 definition   ghlore/ingest/timestamps.py:29
+  parse_timestamp     function  16 matches / 1 definition   relore/ingest/timestamps.py:19
+  iso_utc             function  11 matches / 1 definition   relore/ingest/timestamps.py:29
 ```
 
 `refs` reports **every occurrence and what it is** — a call, a definition, an attribute
@@ -355,7 +355,7 @@ project.
 ## "Why is this line like this?" (#9)
 
 ```
-$ ghlore why src/transformers/models/gpt_neox_japanese/modeling_gpt_neox_japanese.py:90 \
+$ relore why src/transformers/models/gpt_neox_japanese/modeling_gpt_neox_japanese.py:90 \
     --repo huggingface/transformers
 ```
 
@@ -374,7 +374,7 @@ Two empty answers that are not the same, and the page says which:
 - **no pull request carries that commit** — it predates the index, or reached the branch
   outside a pull request;
 - **a pull request, and nobody reviewed this line** — the argument exists, just not here;
-  `ghlore thread` reads the rest of it.
+  `relore thread` reads the rest of it.
 
 `why` needs the working clone below, because blame does. A `--depth 200` clone can read a
 file and cannot attribute a line, which is the hole every cost-minimising agent falls into.
@@ -392,7 +392,7 @@ a file's history, so it would fetch from the remote in the middle of a query -- 
 where the remote will not serve an old object.
 
 ```
-$ ghlore copies compute_default_rope_parameters --repo huggingface/transformers
+$ relore copies compute_default_rope_parameters --repo huggingface/transformers
 186 definitions of compute_default_rope_parameters in 2 shapes
 (grouped by what the body does: type annotations, docstrings and comments are
  normalized away first — `--exact` groups by the text instead)
@@ -403,9 +403,9 @@ $ ghlore copies compute_default_rope_parameters --repo huggingface/transformers
 -- shape 2: 1 copy  <- the only one of its shape
    src/transformers/models/gpt_neox_japanese/modeling_gpt_neox_japanese.py:90
 
-$ ghlore grep 'partial_rotary_factor' --repo huggingface/transformers \
+$ relore grep 'partial_rotary_factor' --repo huggingface/transformers \
     --path 'src/transformers/models/**/modeling_*.py'
-$ ghlore symbol GPTNeoXJapaneseRotaryEmbedding.forward --repo huggingface/transformers
+$ relore symbol GPTNeoXJapaneseRotaryEmbedding.forward --repo huggingface/transformers
 ```
 
 `copies` groups rather than listing, because in a repository that duplicates model code on
@@ -446,8 +446,8 @@ which is what an audit asks. The lens that reads a comment's tree at the time it
 written is a different depth and a separate decision.
 
 **A repository with no clone answers 503 with a sentence**, and the history verbs are
-unaffected: the conversation index never depends on a checkout. `ghlored clone --repo
-OWNER/NAME`, run where `ghlored serve` runs, creates one.
+unaffected: the conversation index never depends on a checkout. `relored clone --repo
+OWNER/NAME`, run where `relored serve` runs, creates one.
 
 ---
 
@@ -463,8 +463,8 @@ the signal tables that build-plan §5.3's extraction pass fills, and they *AND* 
 query — so one of them narrows an otherwise-good search:
 
 ```
-$ ghlore search "429"                              → 3 hits
-$ ghlore search "429" --file reviewbot/llm.py      → 0 hits   # nothing said both
+$ relore search "429"                              → 3 hits
+$ relore search "429" --file reviewbot/llm.py      → 0 hits   # nothing said both
 ```
 
 Three things make one match nothing on an index that does hold the answer. `--file` takes
@@ -476,15 +476,15 @@ normalized into the form the index stores — but a *paraphrase* of an error is 
 it as the query instead.
 
 **3. A trust floor removed everything.** `--trust authoritative` — or `--kind rationale` /
-`--kind precedent`, which imply it — on an index where `ghlored authority` never ran returns
+`--kind precedent`, which imply it — on an index where `relored authority` never ran returns
 nothing at all. Check `trust_floor` in the `--json` response.
 
 **4. One verb is parsed but not built.** It says so rather than returning an empty result
 that reads like an answer, and `--help` marks it:
 
 ```
-$ ghlore precedent --kind bug_fix
-ghlore precedent: not implemented yet (milestone 4, the build plan section 13)
+$ relore precedent --kind bug_fix
+relore precedent: not implemented yet (milestone 4, the build plan section 13)
 ```
 
 `why` was the other one in this block for two releases after it shipped, which is the drift
@@ -498,8 +498,8 @@ tells you which — that distinction is deliberate (§12).
 ## Checking the index rather than the query
 
 ```
-$ ghlore status
-version   0.3.5
+$ relore status
+version   0.3.6
 backend   postgresql / ts_rank_cd  capabilities: fulltext, weighted
 schema    applied [1, 2, 3, 4, 5, 6, 7], pending []
 index     55168 threads, 517276 documents, 332 raw objects
@@ -511,24 +511,24 @@ quota     1/60 per minute, 1/5000 today
 
 **Three rows, and that is the precondition rather than a footnote about it.** This block is
 the reader's mental model of `status`; when it showed one repository it also showed the one
-case in which a bare `ghlore thread 47720` never fails. Every row here is a repository
-`--repo` has to choose between, and `GHLORE_REPO` is how you stop choosing.
+case in which a bare `relore thread 47720` never fails. Every row here is a repository
+`--repo` has to choose between, and `RELORE_REPO` is how you stop choosing.
 
 `capabilities` is how you tell which engine answered. A SQLite index scores with `bm25` and
 has no trigram or vector tier, so a result set from one says nothing about the other —
-which is why `ghlored serve` refuses a SQLite URL without `--allow-sqlite`, and why §10's
+which is why `relored serve` refuses a SQLite URL without `--allow-sqlite`, and why §10's
 benchmark refuses to mix backends.
 
 `version` is the first line because the client and the daemon must be the *same* version.
 
-## "your client is older than this ghlore daemon"
+## "your client is older than this relore daemon"
 
 Not an outage and not something to work around:
 
 ```
-$ ghlore search "429"
-ghlore: client 0.2.4 is older than this ghlore daemon (0.3.0), so it would read an
-out-of-date answer as a complete one. pip install --upgrade 'ghlore @ git+…'
+$ relore search "429"
+relore: client 0.2.4 is older than this relore daemon (0.3.0), so it would read an
+out-of-date answer as a complete one. pip install --upgrade 'relore @ git+…'
 ```
 
 The two ship together, so every request declares its version and a daemon refuses any
@@ -543,7 +543,7 @@ With no MCP server, stdout is the API, so what it prints is a contract rather th
 rendering.
 
 **There is one TTY branch, and it may only add advice** (#13). On a terminal the page also
-carries the backend tag and the flags worth trying next — `--full`, `--focus`, `ghlored
+carries the backend tag and the flags worth trying next — `--full`, `--focus`, `relored
 derive`. Through a pipe, none of that is printed; `--plain` forces the piped form on a
 terminal.
 
@@ -571,8 +571,8 @@ call, so "within a version" is something you can rely on rather than hope for:
 - one blank-line-separated block per hit, `N. repo#number type  [tier]  age  source_type
   @author` first, then the quoted title and snippet, then the URL;
 - every line of retrieved prose is prefixed `> `, and no line of ours ever is, so an
-  unmarked line is always `ghlore` speaking;
-- the whole page sits inside `<<<GHLORE-UNTRUSTED>>>` … `<<<GHLORE-UNTRUSTED-END>>>`;
+  unmarked line is always `relore` speaking;
+- the whole page sits inside `<<<RELORE-UNTRUSTED>>>` … `<<<RELORE-UNTRUSTED-END>>>`;
 - counts and caveats are prose on their own line (`-- 10 of 89 comments … --`,
   `changed files: …`, `(body truncated: …)`), and a caveat is never dropped for brevity;
 - no score is printed. The order is the ranking, and the number's scale is a property of

@@ -1,4 +1,4 @@
-# ghlore — chart defaults.
+# relore — chart defaults.
 #
 # This file is the *shape* of the configuration and safe defaults. It is NOT the
 # deployment's values: those live in the operator's own repository and are passed
@@ -6,7 +6,7 @@
 # an environment. Nothing in this file is a credential, and nothing in it should
 # become one — see `externalSecret` below.
 
-# How much the daemon says. `ghlored` defaults to WARNING, which for a poll loop or
+# How much the daemon says. `relored` defaults to WARNING, which for a poll loop or
 # a day-long backfill means **complete silence while it works** -- 180,000 objects
 # staged and not one line of output, so the only way to tell a healthy run from a
 # wedged one is to query the database. Every progress message it has is INFO.
@@ -15,11 +15,11 @@
 verbosity: 1
 
 image:
-  repository: ghcr.io/huggingface/ghlore
+  repository: ghcr.io/huggingface/relore
   tag: latest
   pullPolicy: IfNotPresent
 
-# Required whenever the image is private, which it is here: `huggingface/ghlore` is
+# Required whenever the image is private, which it is here: `huggingface/relore` is
 # an *internal* repository, so its GHCR package is private and the kubelet gets a
 # 401 pulling it anonymously. The other services in this cluster need none of this
 # because their repositories -- and therefore their packages -- are public.
@@ -30,7 +30,14 @@ imagePullSecrets: []
 
 # The Secret every workload reads via envFrom. Produced by the external-secret
 # operator (see below) or created by hand. Must carry GITHUB_TOKEN,
-# GHLORE_API_TOKENS and POSTGRES_PASSWORD.
+# RELORE_API_TOKENS and POSTGRES_PASSWORD.
+# `ghlore-secrets`, not `relore-secrets`, after the 2026-09-14 rename: this names a live
+# Secret that an external operator produces from a path the operator also owns. Renaming
+# it here renames nothing in Infisical -- it just points the pods at a Secret that does
+# not exist. Its KEYS moved with the code, though: `GHLORE_API_TOKENS` is now
+# `RELORE_API_TOKENS`, so a deployment that uses bearer tokens must rename that key in
+# its secret store too. A `trustNetwork: true` deployment empties it in the pod spec and
+# is unaffected.
 existingSecret: ghlore-secrets
 
 # ---------------------------------------------------------------------------
@@ -43,6 +50,9 @@ postgres:
   # what keeps the vector tier a later decision rather than a migration nobody
   # can run.
   image: pgvector/pgvector:pg16
+  # Both stay `ghlore` after the 2026-09-14 rename. The role and the database exist
+  # inside the StatefulSet's PVC; changing these strings does not rename them, it points
+  # the daemon at a database that was never created.
   user: ghlore
   database: ghlore
   persistence:
@@ -87,13 +97,13 @@ poll:
   #
   # **A repository listed here gets its FULL history.** With no high-water mark
   # `poll` walks from the start (`ingest/poll.py`: "no high-water mark yet, walking
-  # from the start"), and section 5.5 is explicit that `ghlored sample` checkpoints
+  # from the start"), and section 5.5 is explicit that `relored sample` checkpoints
   # under its own pass name and deliberately does **not** move the `threads` mark --
   # so sampling a repository first does not bound its poller either. That is by
   # design: the shared mark must never claim to cover years nobody walked.
   #
   # The consequence for this chart is blunt: **do not list a repository you only
-  # want a sample of.** Sampling is a one-off `ghlored sample --since`, and a sampled
+  # want a sample of.** Sampling is a one-off `relored sample --since`, and a sampled
   # corpus stays current by re-running it, not by polling. Listing one here quietly
   # converts a bounded corpus into a full backfill -- a day of API budget for a large
   # repository, and a corpus that no longer matches the window section 10's numbers
@@ -123,7 +133,7 @@ api:
   # so the confidentiality being given up is one the source data never had. The write --
   # section 8's labelling -- is still gated on a configured path.
   #
-  # When it is on, `GHLORE_API_TOKENS` is emptied in the pod spec, so a stale token in
+  # When it is on, `RELORE_API_TOKENS` is emptied in the pod spec, so a stale token in
   # the secret store cannot quietly put authentication back.
   trustNetwork: false
 
@@ -132,21 +142,24 @@ api:
 # what somebody spent an afternoon labelling.
 labels:
   enabled: true
+  # `/var/lib/ghlore`, not `relore`, after the 2026-09-14 rename: it is a path inside the
+  # live volume. Moving it would hide the labels already written there, and section 15
+  # calls human-judged ground truth the one thing only real use can produce.
   path: /var/lib/ghlore/labels.jsonl
   storageClass: ""
   size: 1Gi
 
 # Issue #7's working clone, one checkout per repository, read by `symbol`, `grep`,
-# `copies` and `defs`/`refs --repo`. `ghlored clone --repo owner/name`, exec'd
+# `copies` and `defs`/`refs --repo`. `relored clone --repo owner/name`, exec'd
 # into the serve pod, is both the create and the refresh; until it runs those verbs
 # answer 503 naming it and nothing else notices.
 clones:
   enabled: true
-  # `ghlore/code/clone.py` defaults to the same path. Setting it here is what makes the
+  # `relore/code/clone.py` defaults to the same path. Setting it here is what makes the
   # pod agree with the code rather than happen to match it.
   path: /var/lib/ghlore/clones
   # How often `serve` re-fetches them (30s, 5m, 2h). Empty means never, and then HEAD is
-  # as old as the last `ghlored clone` -- `grep` and `copies` still answer, about that
+  # as old as the last `relored clone` -- `grep` and `copies` still answer, about that
   # tree. In `serve` and not a CronJob because the PVC is ReadWriteOnce and that pod
   # holds it.
   refresh: 1h

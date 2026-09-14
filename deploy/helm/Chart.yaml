@@ -1,6 +1,6 @@
 apiVersion: v2
-name: ghlore
+name: relore
 version: 0.1.0
 type: application
-description: "ghlore — GitHub-history index: ghlored serve, ghlored poll, and its Postgres"
+description: "relore — GitHub-history index: relored serve, relored poll, and its Postgres"
 icon: https://huggingface.co/front/assets/huggingface_logo-noborder.svg

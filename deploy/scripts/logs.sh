@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Logs from any ghlore workload, without remembering pod names.
+# Logs from any relore workload, without remembering pod names.
 #
 # `--component` is the useful axis: the poll loop and the API fail in completely
 # different ways, and a poll failure is the one that goes quiet rather than loud
@@ -45,7 +45,7 @@ done
 kube=(kubectl --namespace "$namespace")
 [[ -n "$context" ]] && kube+=(--context "$context")
 
-selector="app=ghlore,component=${component}"
+selector="app=relore,component=${component}"
 if [[ -n "$repo" ]]; then
   slug="$(echo "$repo" | tr '/.' '--' | tr '[:upper:]' '[:lower:]')"
   selector="${selector},repo=${slug}"

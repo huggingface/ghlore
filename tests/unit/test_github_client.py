@@ -8,7 +8,7 @@ import httpx
 import pytest
 from fake_github import BASE, FakeGitHub
 
-from ghlore.github.client import GitHubClient, GitHubError, PaginationCapReached
+from relore.github.client import GitHubClient, GitHubError, PaginationCapReached
 
 
 def _client(handler, **kwargs) -> GitHubClient:

@@ -1,4 +1,4 @@
-"""The client, end to end: ``ghlore`` -> HTTP -> ``ghlored`` -> the index, on both dialects.
+"""The client, end to end: ``relore`` -> HTTP -> ``relored`` -> the index, on both dialects.
 
 Only :func:`httpx.request` is redirected, at the socket's place in the stack, so
 everything above and below it is the real thing: the real argument parser, the real
@@ -20,12 +20,12 @@ from fake_github import FakeGitHub
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
-from ghlore import __version__, cli
-from ghlore.api.server import build_app
-from ghlore.api.tokens import Authenticator, Token
-from ghlore.ingest.index_thread import index_thread
-from ghlore.security.untrusted import BEGIN, END
-from ghlore.wire import CLIENT_HEADER, SERVER_HEADER
+from relore import __version__, cli
+from relore.api.server import build_app
+from relore.api.tokens import Authenticator, Token
+from relore.ingest.index_thread import index_thread
+from relore.security.untrusted import BEGIN, END
+from relore.wire import CLIENT_HEADER, SERVER_HEADER
 
 REPO = "owner/name"
 
@@ -43,15 +43,15 @@ def _index(engine: Engine, fake: FakeGitHub, *numbers: int) -> None:
 
 @pytest.fixture
 def wired(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """Point ``httpx.request`` at an in-process ``ghlored``."""
+    """Point ``httpx.request`` at an in-process ``relored``."""
     server = TestClient(build_app(engine))
 
     def request(method: str, url: str, **kwargs) -> httpx.Response:
         return server.request(method, str(url), **kwargs)
 
     monkeypatch.setattr(httpx, "request", request)
-    monkeypatch.setenv("GHLORE_API", "http://testserver")
-    # `GHLORE_REPO` is cleared for the same reason as the tokens: it is a real variable a
+    monkeypatch.setenv("RELORE_API", "http://testserver")
+    # `RELORE_REPO` is cleared for the same reason as the tokens: it is a real variable a
     # developer running this suite has exported, and it changes what every call below
     # sends. A test that passes only on a machine with an unset environment is worse than
     # one that fails.
@@ -113,13 +113,13 @@ def test_a_daemon_that_is_down_does_not_look_like_an_empty_index(
         raise httpx.ConnectError("connection refused")
 
     monkeypatch.setattr(httpx, "request", refuse)
-    monkeypatch.setenv("GHLORE_API", "http://127.0.0.1:1")
+    monkeypatch.setenv("RELORE_API", "http://127.0.0.1:1")
 
     with pytest.raises(SystemExit) as exc:
         cli.main(["search", "anything"])
 
     assert "cannot reach" in str(exc.value)
-    assert "ghlored serve" in str(exc.value)
+    assert "relored serve" in str(exc.value)
 
 
 def test_a_local_address_that_does_not_answer_is_a_different_problem(
@@ -127,20 +127,20 @@ def test_a_local_address_that_does_not_answer_is_a_different_problem(
 ) -> None:
     """ "The deployment is behind a VPN" and "you pointed me at a daemon you never started"
     wear the same symptom and take opposite actions -- and on a client-only install the
-    remedy the old message offered could not be run at all (huggingface/ghlore#19)."""
+    remedy the old message offered could not be run at all (huggingface/relore#19)."""
 
     def refuse(*_a, **_k):
         raise httpx.ConnectError("connection refused")
 
     monkeypatch.setattr(httpx, "request", refuse)
-    monkeypatch.setenv("GHLORE_API", "http://127.0.0.1:8899")
+    monkeypatch.setenv("RELORE_API", "http://127.0.0.1:8899")
 
     with pytest.raises(SystemExit) as exc:
         cli.main(["search", "anything"])
 
     message = str(exc.value)
     assert "nothing is listening" in message
-    assert "ghlore[server]" in message, "and `ghlored serve` needs an extra to exist"
+    assert "relore[server]" in message, "and `relored serve` needs an extra to exist"
     assert "VPN" not in message, "which is a different diagnosis"
 
 
@@ -148,7 +148,7 @@ def test_a_daemon_that_wants_a_token_says_so(engine, monkeypatch: pytest.MonkeyP
     auth = Authenticator(tokens=(Token("t", "secret", repos=None),))
     server = TestClient(build_app(engine, auth=auth))
     monkeypatch.setattr(httpx, "request", lambda m, u, **k: server.request(m, str(u), **k))
-    monkeypatch.setenv("GHLORE_API", "http://testserver")
+    monkeypatch.setenv("RELORE_API", "http://testserver")
     for env in cli.TOKEN_ENVS:
         monkeypatch.delenv(env, raising=False)
 
@@ -160,8 +160,8 @@ def test_a_token_from_the_environment_is_sent(engine, fake, monkeypatch, capsys)
     auth = Authenticator(tokens=(Token("t", "secret", repos=None),))
     server = TestClient(build_app(engine, auth=auth))
     monkeypatch.setattr(httpx, "request", lambda m, u, **k: server.request(m, str(u), **k))
-    monkeypatch.setenv("GHLORE_API", "http://testserver")
-    monkeypatch.setenv("GHLORE_TOKEN", "secret")
+    monkeypatch.setenv("RELORE_API", "http://testserver")
+    monkeypatch.setenv("RELORE_TOKEN", "secret")
     fake.add_pr(1, body="findable wording")
     _index(engine, fake, 1)
 
@@ -186,7 +186,7 @@ def test_json_output_is_the_api_response_and_carries_no_rendering(
 def test_the_score_is_json_only(wired, engine, fake, capsys) -> None:
     """The order already expresses the ranking, and the number's scale is a property of
     the backend, so `score 0.03009` above `score 0.03125` supports no decision a caller
-    can act on. It stays in `--json` for section 8's page (huggingface/ghlore#13)."""
+    can act on. It stays in `--json` for section 8's page (huggingface/relore#13)."""
     fake.add_pr(1, body="findable wording")
     _index(engine, fake, 1)
 
@@ -224,7 +224,7 @@ def test_thread_focus_ranks_the_answering_comment_first(wired, engine, fake, cap
 
 def test_thread_full_serves_the_body_the_cap_was_hiding(wired, engine, fake, capsys) -> None:
     """The cap is a token budget, not a fact about the thread: a caller who has decided it
-    needs the reproduction must be able to ask for it (huggingface/ghlore#5)."""
+    needs the reproduction must be able to ask for it (huggingface/relore#5)."""
     fake.add_issue(1, body="System Info " * 80 + "Reproduction: pass rotary_pct=0.25")
     _index(engine, fake, 1)
 
@@ -242,7 +242,7 @@ def test_inflight_names_the_pull_request_that_already_claims_the_issue(
     wired, engine, fake, capsys
 ) -> None:
     """The call that prevents the most expensive mistake an agent makes
-    (huggingface/ghlore#10)."""
+    (huggingface/relore#10)."""
     fake.add_issue(1, title="crashes for any rotary_pct != 1.0")
     fake.add_pr(2, title="fix: respect partial_rotary_factor", body="Fixes #1")
     _index(engine, fake, 1, 2)
@@ -310,7 +310,7 @@ def test_an_unimplemented_verb_names_its_milestone(wired) -> None:
 
 def test_the_client_declares_its_version_on_every_request(wired, engine, capsys) -> None:
     """Nothing to configure and no way to opt out: the handshake is only worth anything if
-    every request carries it (:mod:`ghlore.wire`)."""
+    every request carries it (:mod:`relore.wire`)."""
     seen = []
     inner = httpx.request
 
@@ -354,7 +354,7 @@ def test_a_daemon_too_old_to_enforce_the_handshake_is_caught_by_the_client(
         return httpx.Response(200, json={"count": 0, "hits": []})
 
     monkeypatch.setattr(httpx, "request", ancient)
-    monkeypatch.setenv("GHLORE_API", "http://testserver")
+    monkeypatch.setenv("RELORE_API", "http://testserver")
 
     with pytest.raises(SystemExit) as exc:
         cli.main(["search", "anything"])
@@ -373,7 +373,7 @@ def test_a_daemon_behind_the_client_names_the_deployment_as_the_thing_to_move(
         return httpx.Response(200, json={"count": 0}, headers={SERVER_HEADER: "0.0.1"})
 
     monkeypatch.setattr(httpx, "request", older)
-    monkeypatch.setenv("GHLORE_API", "http://testserver")
+    monkeypatch.setenv("RELORE_API", "http://testserver")
 
     with pytest.raises(SystemExit) as exc:
         cli.main(["search", "anything"])
@@ -381,7 +381,7 @@ def test_a_daemon_behind_the_client_names_the_deployment_as_the_thing_to_move(
     assert "behind" in str(exc.value)
 
 
-# -- GHLORE_REPO, end to end (issue #36) -----------------------------------
+# -- RELORE_REPO, end to end (issue #36) -----------------------------------
 
 
 def test_a_bare_number_on_a_multi_repo_daemon_is_refused_and_names_the_way_out(
@@ -400,7 +400,7 @@ def test_a_bare_number_on_a_multi_repo_daemon_is_refused_and_names_the_way_out(
         cli.main(["thread", "1"])
 
     assert "more than one repository is in scope" in str(exc.value)
-    assert "GHLORE_REPO" in str(exc.value)
+    assert "RELORE_REPO" in str(exc.value)
 
 
 def test_the_environment_answers_it_without_the_flag(

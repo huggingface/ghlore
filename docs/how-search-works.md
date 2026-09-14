@@ -30,8 +30,8 @@ different tool and it exists: see [Funes](#versus-funes) below.
 The daemon says which of these it can do rather than asking you to trust a document:
 
 ```
-$ ghlore status
-version      0.3.5
+$ relore status
+version      0.3.6
 backend      postgresql / ts_rank_cd  capabilities: fulltext, weighted
 ```
 
@@ -44,7 +44,7 @@ before this page does.
 
 **The conversation, not the code.** Issues, pull request bodies, reviews, inline review
 comments — what people *said*. There is no source code in the database at all; that is a
-design invariant with a test behind it, not an omission. `ghlore map|defs|refs` do read
+design invariant with a test behind it, not an omission. `relore map|defs|refs` do read
 code, but they run against *your* working tree, offline, and never touch the server.
 
 In production that is `huggingface/transformers`' complete history plus `huggingface/serge`
@@ -72,7 +72,7 @@ costs ranking quality on every future query; a missed one costs a single query.
 | `thread_tests` | `tests/test_x.py::TestMask::test_shapes[cuda]`, and the parametrization-stripped form | `--test`, exact |
 | `thread_symbols` | names from stack frames, definitions on diff lines, inline code spans | `--symbol`, exact |
 | `thread_files` | paths from the diff, from an inline comment's anchor, and from prose — **kept apart**, because only the first two are evidence the thread changed something | `--file`, exact |
-| `thread_links` | `Fixes #N` / `Closes #N` edges | `ghlore inflight`, exact |
+| `thread_links` | `Fixes #N` / `Closes #N` edges | `relore inflight`, exact |
 
 The normalization on errors is the one that earns its keep: you paste what your terminal
 printed, shapes and addresses and all, and it is put into the same form the index stored.
@@ -129,7 +129,7 @@ On a laptop the engine is SQLite FTS5 with `bm25` and a porter stemmer. It answe
 ## Versus `grep`
 
 `grep` reads the tree; this reads the discussion. They do not overlap, and the honest split
-is **grep for what the code is, ghlore for why it is that way.**
+is **grep for what the code is, relore for why it is that way.**
 
 **Where this wins**
 
@@ -145,7 +145,7 @@ is **grep for what the code is, ghlore for why it is that way.**
 **Where `grep` wins**
 
 - Anything about the current tree: definitions, callers, "does this string still appear".
-  Use `ghlore map|defs|refs` for that — they are local, offline, and not this index.
+  Use `relore map|defs|refs` for that — they are local, offline, and not this index.
 - Exact substring anywhere, including inside identifiers. Full-text tokenizes, so
   `_maybe_import` does not match `_maybe_import_sdnq` as a substring the way `grep` would.
 - No dependency, no network, no freshness question.
@@ -175,7 +175,7 @@ cover an English paraphrase with no anchor in it, and that limitation is real.
 
 The measured shape, Recall@10 / MRR, over 139 judged examples against both baselines:
 
-| slice | n | ghlore | GitHub search | grep |
+| slice | n | relore | GitHub search | grep |
 | --- | --- | --- | --- | --- |
 | `failure` | 48 | **1.000** / 0.927 | 0.875 / 0.743 | 0.000 / 0.000 |
 | `precedent` | 40 | **0.525** / **0.286** | 0.325 / 0.102 | 0.200 / 0.130 |
@@ -202,7 +202,7 @@ dataset you can optionally publish as a private Hugging Face dataset. Agents cal
 people call `funes ask`. It is append-only by design: recording what your agent did is the
 entire point.
 
-`ghlore` indexes **what people decided in public** — issues, pull requests, reviews, inline
+`relore` indexes **what people decided in public** — issues, pull requests, reviews, inline
 review comments — and has no write path at all. Not "we have not built one": there is no
 `remember` verb and there will not be one, because an agent's conclusion becoming evidence
 the *next* agent retrieves is the failure this corpus exists to avoid. Authorship is what
@@ -214,7 +214,7 @@ history a wrong turn is still useful: *I tried that and it did not work* is exac
 want back tomorrow. In a shared corpus of a project's decisions, the same row is
 contamination.
 
-| | `ghlore` | Funes |
+| | `relore` | Funes |
 | --- | --- | --- |
 | remembers | what the project decided | what your agent did |
 | authored by | humans, with write-access standing attached; bots labelled and excluded by default | your agent, by construction |
@@ -225,7 +225,7 @@ contamination.
 | scale quoted | 48k threads / 466k documents, ~5-minute freshness | 19,195 sessions / 308k chunks, ~2h03m to index on an M4 Pro, 6.3 s per query |
 
 **They compose, and the pairing is the actual recommendation.** Funes answers *have I been
-here before*; `ghlore` answers *has the project been here before*. An agent that asks both
+here before*; `relore` answers *has the project been here before*. An agent that asks both
 before writing a patch knows what it already tried and what the maintainers already settled
 — which are different facts, held in different places, for different reasons.
 
@@ -237,11 +237,11 @@ shape, not as a race.
 
 | question | tool |
 | --- | --- |
-| "what calls this function today?" | `grep`, or `ghlore refs` on your checkout |
-| "has anyone hit this exception?" | `ghlore search "<error>" --kind failure` |
-| "why is this code like this?" | `ghlore search "<terms>" --kind rationale --file <path>` |
-| "is somebody already fixing this?" | `ghlore inflight <n>` |
-| "what did the maintainer say in that thread?" | `ghlore thread <n> --focus "<what you care about>"` |
+| "what calls this function today?" | `grep`, or `relore refs` on your checkout |
+| "has anyone hit this exception?" | `relore search "<error>" --kind failure` |
+| "why is this code like this?" | `relore search "<terms>" --kind rationale --file <path>` |
+| "is somebody already fixing this?" | `relore inflight <n>` |
+| "what did the maintainer say in that thread?" | `relore thread <n> --focus "<what you care about>"` |
 | "find me something worded completely differently" | neither, today — see above |
 | "have I already tried this, in an earlier session?" | [Funes](https://huggingface.co/blog/funes), not this |
 
@@ -256,7 +256,7 @@ shape, not as a race.
   reviews until the per-PR pass runs over it again.
 - **`--file` has a recall floor** until rename chains exist: a thread that predates a file's
   last move cannot match on today's path.
-- **Trust tiers are inert until `ghlored authority` has run.** On an org repository,
+- **Trust tiers are inert until `relored authority` has run.** On an org repository,
   maintainers whose write access comes through a team read as `MEMBER` and stay in
   `reported`, which empties the `authoritative` tier and therefore every `--kind rationale`
   query.

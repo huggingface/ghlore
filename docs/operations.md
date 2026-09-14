@@ -7,9 +7,9 @@ interface.
 ## Install
 
 ```bash
-GH=git+https://github.com/huggingface/ghlore   # no PyPI release yet; install from main
+GH=git+https://github.com/huggingface/relore   # no PyPI release yet; install from main
 pip install $GH                        # client only
-pip install "ghlore[postgres] @ $GH"   # the daemon
+pip install "relore[postgres] @ $GH"   # the daemon
 ```
 
 The client must be the same version as the daemon it talks to; if it is not, the daemon
@@ -19,25 +19,25 @@ ends](#one-version-both-ends).
 ## Index
 
 ```bash
-export GHLORE_DATABASE_URL=postgresql://localhost/ghlore   # or sqlite:///ghlore.db, dev only
+export RELORE_DATABASE_URL=postgresql://localhost/relore   # or sqlite:///relore.db, dev only
 export GITHUB_TOKEN=...                                    # issues:read + pull_requests:read
-ghlored migrate
-ghlored backfill --repo owner/name           # full history; resumable, ~a day
-ghlored poll     --repo owner/name --interval 5m
-ghlored sweep    --repo owner/name           # weekly: reconcile deletions
+relored migrate
+relored backfill --repo owner/name           # full history; resumable, ~a day
+relored poll     --repo owner/name --interval 5m
+relored sweep    --repo owner/name           # weekly: reconcile deletions
 ```
 
-Run **`ghlored authority`** after backfilling an org-owned repository, or `--trust
+Run **`relored authority`** after backfilling an org-owned repository, or `--trust
 authoritative` returns nothing: maintainers whose write access comes through a team report
 as `MEMBER` and stay in `reported` until it does. Measured before that pass existed: zero
 of 415 documents were `authoritative`.
 
-`ghlored sample --repo … --since YYYY-MM-DD --kind issue|pr [--merged]` indexes a bounded
+`relored sample --repo … --since YYYY-MM-DD --kind issue|pr [--merged]` indexes a bounded
 window instead of a history, fetching **each thread whole** — §10's evaluation set needs a
 corpus, not a day of API budget. It is deliberately not `backfill --since`: that would walk
 `/issues/comments?since=`, which filters individual comments and would index a thread that
 moved inside the window without the older comments that explain it (§5.5). A sampled index
-declares its floor and `ghlore status` prints it, because a recall number is only comparable
+declares its floor and `relore status` prints it, because a recall number is only comparable
 against a baseline restricted to the same window.
 
 **`backfill --only files` is incremental.** It stages the merged PRs whose detail is not
@@ -57,18 +57,18 @@ out at HEAD and complete rather than filtered, so `why`'s blame never fetches mi
 Create it **where `serve` runs** — that is the process answering them:
 
 ```bash
-export GHLORE_CLONE_ROOT=/var/lib/ghlore/clones   # default; a pod needs a volume for it
-export GHLORE_CLONE_REFRESH=1h                    # serve re-runs the fetch on this timer
-ghlored clone --repo owner/name                   # create; re-running it is the refresh
+export RELORE_CLONE_ROOT=/var/lib/ghlore/clones   # default; a pod needs a volume for it
+export RELORE_CLONE_REFRESH=1h                    # serve re-runs the fetch on this timer
+relored clone --repo owner/name                   # create; re-running it is the refresh
 ```
 
 Without one those verbs answer 503 with a sentence naming this command, and nothing else
 degrades — the index does not depend on a checkout.
 
-**`GHLORE_CLONE_REFRESH` is off by default**, and the refresh lives inside `serve` rather
+**`RELORE_CLONE_REFRESH` is off by default**, and the refresh lives inside `serve` rather
 than in a CronJob: the clones volume is ReadWriteOnce and that process holds it, and a
 laptop has nothing to schedule with. It refreshes what is already cloned and never creates
-one — a repository added with `ghlored clone` joins on the next tick. Unset, HEAD ages
+one — a repository added with `relored clone` joins on the next tick. Unset, HEAD ages
 until somebody re-runs the command.
 
 ## Serve
@@ -77,9 +77,9 @@ One token per consumer, each scoped to repositories — `secret:repos[:scopes]`,
 `repos` is a comma list or `*` and `scopes` adds `label` for the UI:
 
 ```bash
-export GHLORE_API_TOKENS="tok_agent:owner/name tok_ui:*:label"
-export GHLORE_LABELS_PATH=./labels.jsonl     # enables the UI's relevance labelling
-ghlored serve --port 8080 --host 0.0.0.0
+export RELORE_API_TOKENS="tok_agent:owner/name tok_ui:*:label"
+export RELORE_LABELS_PATH=./labels.jsonl     # enables the UI's relevance labelling
+relored serve --port 8080 --host 0.0.0.0
 ```
 
 Or no tokens at all, when a private network is the perimeter: `serve --trust-network` binds
@@ -89,14 +89,14 @@ outright unless you pass `--allow-sqlite`.
 
 ## Point a client at it
 
-`ghlore` defaults to the deployment, `https://ghlore.huggingface.tech`, which is reachable
+`relore` defaults to the deployment, `https://ghlore.huggingface.tech`, which is reachable
 over the private network only and needs no token — the network is the perimeter there, and
-responses are read-only over public GitHub history. Set `GHLORE_API` to use your own daemon
+responses are read-only over public GitHub history. Set `RELORE_API` to use your own daemon
 instead.
 
 ```bash
-export GHLORE_API=http://localhost:8080
-export GHLORE_TOKEN=tok_agent                # only if that daemon requires one
+export RELORE_API=http://localhost:8080
+export RELORE_TOKEN=tok_agent                # only if that daemon requires one
 ```
 
 `--json` for machine-readable output, `--compact` to trim snippets. **No results is exit 0
@@ -106,9 +106,9 @@ for "the tool is broken".
 ## One version, both ends
 
 The client and the daemon must be the **same** version, and they enforce it. Every request
-to `/api/v1` declares its client version in `x-ghlore-client`; a daemon that reads anything
+to `/api/v1` declares its client version in `x-relore-client`; a daemon that reads anything
 else answers `426 Upgrade Required` and one sentence saying which end is behind. Every
-response carries `x-ghlore-version`, so a client whose daemon is too old to enforce that
+response carries `x-relore-version`, so a client whose daemon is too old to enforce that
 catches the same mismatch from its side.
 
 The reason is the failure mode, not tidiness: an old client asking a new daemon gets an
@@ -116,7 +116,7 @@ answer where every field it knows about is present and correct, and whatever the
 version would have added is simply absent. Well-formed, plausible, silently incomplete — the shape of every defect in §13.3.
 A refusal is legible; a short answer is not.
 
-The price is that `ghlore/__init__.py`'s `__version__` is a contract rather than a label:
+The price is that `relore/__init__.py`'s `__version__` is a contract rather than a label:
 
 * it is the **only** place the version is written (`pyproject.toml` reads it from there);
 * **bump it in the same commit** as any change a client can see — a wire payload, a
@@ -124,7 +124,7 @@ The price is that `ghlore/__init__.py`'s `__version__` is a contract rather than
 * **bump and deploy are one operation.** A bump merged to `main` and not shipped breaks
   every client installed after the merge, and they will be told the deployment is behind.
 
-`ghlore --version`, `ghlored --version`, `ghlore status` and the daemon's page all print
+`relore --version`, `relored --version`, `relore status` and the daemon's page all print
 it, so "which version is this" never needs a guess. What the mismatch looks like from the
 CLI, and which end to fix, is in [`cli.md`](cli.md).
 
@@ -132,9 +132,9 @@ CLI, and which end to fix, is in [`cli.md`](cli.md).
 
 ```bash
 # §10's benchmark: mine candidates, fold the UI's labels in, score the baselines
-ghlored mine  --repo owner/name --out benchmarks/owner-name.jsonl
-ghlored judge --set benchmarks/owner-name.jsonl --labels labels.jsonl
-ghlored bench --repo owner/name --set benchmarks/owner-name.jsonl \
+relored mine  --repo owner/name --out benchmarks/owner-name.jsonl
+relored judge --set benchmarks/owner-name.jsonl --labels labels.jsonl
+relored bench --repo owner/name --set benchmarks/owner-name.jsonl \
   --system index --system index+expand --system github
 ```
 

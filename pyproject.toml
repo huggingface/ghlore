@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ghlore"
-# Read from ghlore/__init__.py: the client and the daemon refuse to talk across a version
-# difference (ghlore/wire.py), so two places to write it is one place to get it wrong.
+name = "relore"
+# Read from relore/__init__.py: the client and the daemon refuse to talk across a version
+# difference (relore/wire.py), so two places to write it is one place to get it wrong.
 dynamic = ["version"]
 description = "GitHub project memory: index a repository's issue/PR history and serve it to agents and humans"
 readme = "README.md"
@@ -23,28 +23,28 @@ dependencies = ["httpx>=0.27"]
 # driver, so `[server]` alone runs on a dev laptop and in the test suite.
 server = ["SQLAlchemy>=2.0", "fastapi>=0.110", "uvicorn>=0.29", "pydantic>=2.6"]
 # Production. SQLite is for tests and laptops only -- see AGENTS.md.
-postgres = ["ghlore[server]", "psycopg[binary]>=3.1"]
+postgres = ["relore[server]", "psycopg[binary]>=3.1"]
 # The code-lens engine. Ships no grammars.
 code = ["tree-sitter>=0.21"]
 # One extra per language. Adding a language must not touch core.
-python = ["ghlore[code]", "tree-sitter-python>=0.21"]
-dev = ["ghlore[postgres,python]", "pytest>=8", "ruff>=0.5"]
+python = ["relore[code]", "tree-sitter-python>=0.21"]
+dev = ["relore[postgres,python]", "pytest>=8", "ruff>=0.5"]
 
 [project.scripts]
-ghlore = "ghlore.cli:main"
-# Through the shim, not straight at `ghlore.daemon:main`: the base install registers this
+relore = "relore.cli:main"
+# Through the shim, not straight at `relore.daemon:main`: the base install registers this
 # script and does NOT carry the daemon's dependencies, so the import has to be guarded or
-# a client-only install answers `ghlored --help` with a ModuleNotFoundError traceback.
-ghlored = "ghlore.entrypoints:ghlored"
+# a client-only install answers `relored --help` with a ModuleNotFoundError traceback.
+relored = "relore.entrypoints:relored"
 
-[project.entry-points."ghlore.languages"]
-python = "ghlore.code.providers.python:PythonProvider"
+[project.entry-points."relore.languages"]
+python = "relore.code.providers.python:PythonProvider"
 
 [tool.setuptools.dynamic]
-version = { attr = "ghlore.__version__" }
+version = { attr = "relore.__version__" }
 
 [tool.setuptools.packages.find]
-include = ["ghlore*"]
+include = ["relore*"]
 
 [tool.ruff]
 line-length = 100

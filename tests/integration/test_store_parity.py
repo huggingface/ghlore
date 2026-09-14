@@ -1,7 +1,7 @@
 """Dialect parity: the portable core must behave *identically* on both dialects.
 
 Every test here runs twice -- once on in-memory SQLite, once on Postgres if
-``GHLORE_TEST_POSTGRES_URL`` is set. See tests/conftest.py, and section 4.1 for the four
+``RELORE_TEST_POSTGRES_URL`` is set. See tests/conftest.py, and section 4.1 for the four
 traps these pin down.
 """
 
@@ -12,10 +12,10 @@ import datetime as dt
 import pytest
 from sqlalchemy import Engine, delete, func, insert, select, text
 
-from ghlore.store import repository as repo_layer
-from ghlore.store import schema as s
-from ghlore.store.dialect import UTC, upsert, utcnow
-from ghlore.store.migrations import MIGRATIONS, describe, migrate
+from relore.store import repository as repo_layer
+from relore.store import schema as s
+from relore.store.dialect import UTC, upsert, utcnow
+from relore.store.migrations import MIGRATIONS, describe, migrate
 
 
 def _thread(engine: Engine, number: int = 1, **overrides: object) -> int:
@@ -48,7 +48,7 @@ def test_the_file_provenance_column_lands_on_a_database_that_predates_it(
     """Step 7 is an ``ALTER TABLE`` rather than a ``create_all``: ``thread_files`` has
     existed since step 1, so a new column on it reaches an existing index only through its
     own step -- and has to be a no-op on a fresh one, where step 1 just created it with
-    the column already there (huggingface/ghlore#17).
+    the column already there (huggingface/relore#17).
     """
     with engine.begin() as conn:
         conn.execute(text("DROP TABLE thread_files"))

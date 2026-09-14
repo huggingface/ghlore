@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ghlore -> Kubernetes. A thin wrapper around `helm upgrade --install`.
+# relore -> Kubernetes. A thin wrapper around `helm upgrade --install`.
 #
 # The script is the interface (see the playbooks repo's CLAUDE.md): it encodes the
 # context check, the values requirement and the post-deploy verification, so that a
@@ -20,6 +20,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHART_DIR="${ROOT_DIR}/deploy/helm"
 
+# Both stay `ghlore` after the 2026-09-14 rename to relore. The release name is what
+# every resource in the chart is named after (`_helpers.tpl`'s "name" is `.Release.Name`),
+# and the namespace holds the PVCs -- so renaming either does not rename the deployment,
+# it stands up a second, empty one beside it. The project is relore; this deployment is
+# still called ghlore, and so is its hostname.
 release="ghlore"
 namespace="ghlore"
 values_files=()
@@ -202,7 +207,7 @@ for workload in "deploy/${release}" "statefulset/${release}-postgres"; do
     --timeout="$timeout" || exit 1
 done
 for d in $(kubectl "${kube_ctx[@]}" --namespace "$namespace" get deploy \
-             -l "app=ghlore" -o name 2>/dev/null | grep -- "-poll-"); do
+             -l "app=relore" -o name 2>/dev/null | grep -- "-poll-"); do
   kubectl "${kube_ctx[@]}" --namespace "$namespace" rollout status "$d" --timeout="$timeout" || exit 1
 done
 
@@ -213,13 +218,13 @@ kube=(kubectl --namespace "$namespace")
 
 echo
 echo "== pods =="
-"${kube[@]}" get pods -l "app=ghlore" -o wide
+"${kube[@]}" get pods -l "app=relore" -o wide
 echo
 echo "== index status =="
 # From inside the cluster, through the daemon's own reporting rather than by
-# querying the database: this is the same output a human gets from `ghlored
+# querying the database: this is the same output a human gets from `relored
 # status`, and it prints the sample window, the per-pass high-water marks and the
 # superseded-document count (section 14.1).
-"${kube[@]}" exec "deploy/${release}" -- ghlored status || {
+"${kube[@]}" exec "deploy/${release}" -- relored status || {
   echo "warning: could not read status from the serve pod" >&2
 }
