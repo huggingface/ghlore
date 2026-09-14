@@ -453,9 +453,37 @@ the line last, which on a reformatted line is a tidy-up standing in front of the
 request that decided anything. The page lists the chain — `git log -L` over the *enclosing
 definition*, so a line that moved inside its function is still tracked — with each revision
 resolved to its pull request. Measured on `transformers`: blame of `generation/utils.py`
-names #43121, a later refactor; the behaviour was argued in #37866. What the chain does not
-follow is a line deleted and reintroduced elsewhere — that is a question for `-S` and a term
-to pickaxe on, which is a judgement it will not make for you.
+names #43121, a later refactor; the behaviour was argued in #37866.
+
+**And where the line's history cannot reach, the word's can.** A revision chain follows a
+*range*, so it tracks a line that moved and loses a block that was **rewritten** — which is
+the common case, and was the measured one: on `generation/utils.py:2301` the whole
+eight-commit chain postdates #37866. Four separate agent runs left this verb at that point
+and ran `git log -S` by hand. The page now runs it for you, as a second list that never
+merges with the first:
+
+```
+-- 7 commit(s) changed `fullgraph` in this file, newest first. This follows the word,
+   not the line, so it reaches a block that was rewritten rather than moved --
+   a2e76b908b1f  2025-08-19  #40137
+> 🚨🚨 Switch default compilation to fullgraph=False (#40137)
+   163138a911c1  2025-05-22  #37866
+> 🚨🚨[core] Completely rewrite the masking logic for all attentions (#37866)
+   …
+```
+
+**The word is chosen, and the page names it**, because the choice is a judgement and both
+obvious rules for it are wrong. *Rarest word on the line* picks
+`is_flash_attention_requested`, whose pickaxe returns exactly the commit blame already named
+— the name arrived with the refactor. *Deepest history* picks `compile` and `cache`, which
+are simply common. The rule is both, in order: the most distinctive word that actually
+reaches further back than the line already does. A candidate whose history fills the page is
+unbounded and skipped; one that stops no earlier than the revision chain has added nothing
+and is skipped. `--presentation` (a TTY) also prints what it tried and what each reached.
+
+An empty origin list is a real answer — the revision chain *is* the whole story — and is not
+the same as the pickaxe not having run. What this still cannot follow is a **renamed**
+symbol, which is milestone 4's rename chains.
 
 **When the line window is empty, it widens rather than stopping (#63, #64).** In order,
 labelled, so a widened answer is never read as an exact one: comments on the line →
@@ -468,7 +496,9 @@ line under it exists.
 Two empty answers that are not the same, and the page says which:
 
 - **no pull request carries that commit** — it predates the index, or reached the branch
-  outside a pull request;
+  outside a pull request. Both chains above are still printed on that page: blame's own
+  commit being unresolvable is exactly when a revision or a pickaxe hit that *is* indexed
+  is the only way in;
 - **a pull request, and nothing said at any level** — the page names the next command
   (`relore thread <n> --full`) rather than ending on a count of zero.
 
@@ -614,7 +644,7 @@ tells you which — that distinction is deliberate (§12).
 
 ```
 $ relore status
-version   0.3.13
+version   0.3.14
 backend   postgresql / ts_rank_cd  capabilities: fulltext, weighted
 schema    applied [1, 2, 3, 4, 5, 6, 7], pending []
 index     55168 threads, 517276 documents, 332 raw objects

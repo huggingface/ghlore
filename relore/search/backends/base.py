@@ -63,6 +63,7 @@ from relore.search.queries import (
     WhyView,
     admissible_trust,
     render_age,
+    render_stamp,
     snippet,
     tokenize,
     trust_policy,
@@ -557,6 +558,7 @@ class SearchBackend(ABC):
             author=row.author,
             state=row.state,
             age=render_age(row.created_at),
+            created_at=row.created_at,
             labels=labels,
             body=body,
             body_chars=body_chars,
@@ -594,6 +596,7 @@ class SearchBackend(ABC):
         summary: str = "",
         window: int = 25,
         history: Sequence[Any] = (),
+        origin: Any = None,
     ) -> WhyView:
         """What the index knows about the commit blame named, and about this line.
 
@@ -611,8 +614,18 @@ class SearchBackend(ABC):
         the caller has the clone and this has the index (relore#57). Blame names the last
         commit, which on a reformatted line is a cosmetic pull request standing in front of
         the one that argued the behaviour.
+
+        ``origin`` is the *string* chain -- ``git log -S`` on a word from the line, chosen
+        by :func:`relore.code.blame.origin_history`. It exists because the revision chain
+        follows a range and therefore loses a block that was rewritten rather than moved,
+        which is the common case and was the measured one: on ``generation/utils.py:2301``
+        the whole eight-commit revision chain postdates #37866, the pull request that
+        argued the behaviour. Resolved through the same query as the revisions, so a
+        reader can tell the two lists apart by what they are, not by how they look.
         """
         shas = [str(commit.sha) for commit in history]
+        origin_commits = tuple(getattr(origin, "commits", ()) or ())
+        shas += [str(commit.sha) for commit in origin_commits]
         with self.engine.connect() as conn:
             row = conn.execute(
                 select(s.threads.c.github_number, s.threads.c.title)
@@ -635,10 +648,30 @@ class SearchBackend(ABC):
                 }
                 for commit in history
             )
+            introduced = tuple(
+                {
+                    "sha": commit.sha,
+                    "date": commit.date,
+                    "summary": commit.summary,
+                    **(
+                        resolved.get(str(commit.sha))
+                        or {"number": _number_from_summary(str(commit.summary))}
+                    ),
+                }
+                for commit in origin_commits
+            )
             number = int(row.github_number) if row else _number_from_summary(summary)
             if number is None:
                 return WhyView(
-                    repo=repo, path=path, line=line, sha=sha, summary=summary, history=chain
+                    repo=repo,
+                    path=path,
+                    line=line,
+                    sha=sha,
+                    summary=summary,
+                    history=chain,
+                    origin=introduced,
+                    origin_term=str(getattr(origin, "term", "") or ""),
+                    origin_considered=tuple(getattr(origin, "considered", ()) or ()),
                 )
             at_line, on_file, reviews, level = _argument(conn, number, path, line, window)
         return WhyView(
@@ -655,6 +688,9 @@ class SearchBackend(ABC):
             reviews=tuple(reviews),
             level=level,
             history=chain,
+            origin=introduced,
+            origin_term=str(getattr(origin, "term", "") or ""),
+            origin_considered=tuple(getattr(origin, "considered", ()) or ()),
         )
 
     # -- what is already being worked on ---------------------------------
@@ -719,6 +755,7 @@ class SearchBackend(ABC):
                 draft=bool((row._mapping["metadata"] or {}).get("draft")),
                 merged=row.merged_at is not None,
                 age=render_age(row.created_at),
+                created_at=row.created_at,
                 relationship=row.relationship,
                 state_reason=(row._mapping["metadata"] or {}).get("state_reason"),
                 closed_by=(row._mapping["metadata"] or {}).get("closed_by"),
@@ -963,6 +1000,11 @@ def _argument(
             "url": row.url,
             "line": None,
             "age": render_age(row.github_created_at),
+            # The age is what the page prints; this is what a citation needs. `why` is the
+            # verb most often asked for "the comment, with its author and its date", and
+            # its own revision rows have carried a date since relore#57 -- so without this
+            # the page was inconsistent with itself (huggingface/relore#66).
+            "date": render_stamp(row.github_created_at),
             "text": row.body_text,
         }
         if row.source_type == "review":

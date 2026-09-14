@@ -282,6 +282,9 @@ class ThreadView:
     #: current?", and two field runs read that strip wrongly in opposite directions --
     #: once discounting comments that were complete (huggingface/relore#32).
     indexed_at: dt.datetime | None = None
+    #: When the thread was opened -- the moment ``age`` was rendered from, for a caller that
+    #: has to cite it rather than read it (:func:`render_stamp`, huggingface/relore#66).
+    created_at: dt.datetime | None = None
     #: How the returned comments were chosen -- ``focus`` when a query ordered them,
     #: :data:`ENDS_AND_MIDDLE` otherwise. A positional sample and a ranked top-ten are
     #: indistinguishable on the page unless the page says which it is, and the first ten
@@ -317,6 +320,8 @@ class Claim:
     merged: bool
     age: str
     relationship: str
+    #: The moment ``age`` was rendered from. JSON only -- see :func:`render_stamp`.
+    created_at: dt.datetime | None = None
     #: How it stopped, not only that it did (issue #22).
     state_reason: str | None = None
     closed_by: str | None = None
@@ -358,6 +363,16 @@ class WhyView:
     #: The line's revision chain, newest first, each resolved to its pull request where the
     #: index holds one (relore#57). ``blame`` is this chain's first entry, never its whole.
     history: tuple[dict[str, Any], ...] = ()
+    #: The line's *string* chain: ``git log -S`` on one word from it, oldest last. A
+    #: revision chain follows a range and so loses a block that was **rewritten** rather
+    #: than moved -- which is the common case, and is why three separate runs left this
+    #: verb and ran the pickaxe by hand. Empty when no candidate word found anything the
+    #: revision chain did not already have, which is a real answer and not a gap.
+    origin: tuple[dict[str, Any], ...] = ()
+    #: Which word was pickaxed, and what every candidate reached. The choice is a
+    #: judgement, and a page that does not show its working cannot be argued with.
+    origin_term: str = ""
+    origin_considered: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -510,6 +525,24 @@ def render_age(then: dt.datetime | None, *, now: dt.datetime | None = None) -> s
     if months < 24:
         return f"{int(months)}mo"
     return f"{days / 365.25:.0f}y"
+
+
+def render_stamp(then: dt.datetime | None) -> str | None:
+    """The same moment :func:`render_age` renders, as a date a caller can *cite*.
+
+    Age is the right unit for reading and it is what the rendered page keeps: a bare
+    timestamp makes a model do arithmetic it will skip. It is not enough to quote one, and
+    quoting is what an agent is asked for -- "the decisive comment, with its author and its
+    date". With only an age, a careful agent bounds the date from the merge commit and says
+    it did; a less careful one states the inferred month as a fact (huggingface/relore#66).
+
+    So both, on different surfaces: the age in the text, this in the JSON. ``Z`` rather than
+    an offset and no microseconds, so it compares character-for-character with what the
+    GitHub API hands over.
+    """
+    if then is None:
+        return None
+    return then.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def snippet(text: str, terms: tuple[str, ...] = (), *, limit: int = MAX_SNIPPET_CHARS) -> str:

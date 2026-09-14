@@ -24,6 +24,7 @@ from relore.search.queries import (
     InflightView,
     ThreadView,
     WhyView,
+    render_stamp,
 )
 
 
@@ -130,6 +131,10 @@ def hit_json(hit: Hit, *, compact: bool = False) -> dict[str, Any]:
         "author": hit.author,
         "trust": hit.trust,
         "age": hit.age,
+        # The age is for reading, this is for citing. JSON only, and never instead of the
+        # age: a bare timestamp makes a model do arithmetic it will skip
+        # (`render_stamp`, huggingface/relore#66).
+        "date": render_stamp(hit.created_at),
         "snippet": hit.snippet,
         # Which comment, and which piece of it (huggingface/relore#18). `url` is not an
         # identity: a chunk of a comment carries the comment's URL, so two hits from one
@@ -175,6 +180,7 @@ def inflight_json(view: InflightView) -> dict[str, Any]:
                 "closed_by": claim.closed_by,
                 "review_decision": claim.review_decision,
                 "age": claim.age,
+                "date": render_stamp(claim.created_at),
                 "relationship": claim.relationship,
             }
             for claim in view.claims
@@ -213,19 +219,25 @@ def why_json(view: WhyView, *, blame: Any) -> dict[str, Any]:
         "reviews": [dict(review) for review in view.reviews],
         "level": view.level,
         "history": [dict(commit) for commit in view.history],
+        # Separate from `history` and never merged into it: one follows the line, the other
+        # follows a word, and a caller that cannot tell them apart cannot tell "this line
+        # was reformatted eight times" from "this behaviour was argued here".
+        "origin": [dict(commit) for commit in view.origin],
+        "origin_term": view.origin_term,
+        "origin_considered": [
+            {"term": term, "commits": count} for term, count in view.origin_considered
+        ],
     }
 
 
 def _stamp(moment: dt.datetime | None) -> str | None:
     """A freshness mark a reader can compare with a GitHub timestamp, to the second.
 
-    ``Z`` rather than an offset, and no microseconds: this is read next to the ages on the
-    same page, and the six digits it would otherwise carry are noise in a line whose whole
-    job is to be glanced at.
+    One function for every timestamp this API serves, so a caller reading ``indexed_at``
+    next to a comment's ``date`` never has to parse two formats
+    (:func:`~relore.search.queries.render_stamp`).
     """
-    if moment is None:
-        return None
-    return moment.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return render_stamp(moment)
 
 
 def thread_json(view: ThreadView, *, compact: bool = False) -> dict[str, Any]:
@@ -238,6 +250,7 @@ def thread_json(view: ThreadView, *, compact: bool = False) -> dict[str, Any]:
         "author": view.author,
         "state": view.state,
         "age": view.age,
+        "date": render_stamp(view.created_at),
         "labels": list(view.labels),
         # Events, not prose (issue #22).
         "state_reason": view.state_reason,

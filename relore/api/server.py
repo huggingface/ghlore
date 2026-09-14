@@ -43,7 +43,7 @@ from relore.api.schemas import (
     why_json,
 )
 from relore.api.tokens import LABEL_SCOPE, Authenticator, AuthError, RateLimited, Token
-from relore.code.blame import blame_line, line_history
+from relore.code.blame import blame_line, line_history, origin_history
 from relore.code.clone import CloneUnavailable, WorkingClones
 from relore.code.defs import definitions
 from relore.code.refresh import REFRESH_ENV, start_refresh
@@ -529,13 +529,18 @@ def build_app(
         # every reformat, and the chain that tracks a one-line range ends at the first one
         # (relore#57). Falls back to the line where nothing can parse the file.
         start, end = _enclosing_span(root, path, line)
+        history = line_history(root, path, start, end)
         view = deps.backend.why(
             name,
             path,
             line,
             sha=found.sha,
             summary=found.summary,
-            history=line_history(root, path, start, end),
+            history=history,
+            # The pickaxe the revision chain declines to run. Here rather than in the
+            # backend for the same reason blame is: the clone is this layer's, and the
+            # query layer stays a database away from a subprocess.
+            origin=origin_history(root, path, line, known=history),
         )
         payload = {"notice": NOTICE, **why_json(view, blame=found)}
         return _json(

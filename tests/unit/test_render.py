@@ -494,6 +494,63 @@ def test_an_out_of_scope_page_says_the_scope_is_empty() -> None:
     assert "no repository in scope" in out
 
 
+def test_an_unresolvable_commit_still_gets_both_chains() -> None:
+    """The page where they matter most. Blame's own commit is in no indexed pull request,
+    so the revisions and the pickaxe are the only way in -- and this branch used to return
+    on the apology and throw both away."""
+    out = render_why(
+        {
+            "blame": {"sha": "0" * 40, "author": "someone", "summary": "s", "text": "t"},
+            "number": None,
+            "history": [
+                {"sha": "a" * 12, "date": "2026-01-15", "number": 43121, "summary": "refactor"},
+                {"sha": "b" * 12, "date": "2026-01-07", "number": 43126, "summary": "moes"},
+            ],
+            "origin": [{"sha": "c" * 12, "date": "2025-05-22", "number": 37866, "summary": "why"}],
+            "origin_term": "fullgraph",
+        }
+    )
+
+    assert "no pull request in this index carries that commit" in out
+    assert "this line has 2 revisions" in out
+    assert "changed `fullgraph` in this file" in out
+    assert "#37866" in out
+
+
+def test_the_two_chains_are_never_one_list() -> None:
+    """They answer different questions: one follows the range, one follows a word."""
+    out = render_why(
+        {
+            "blame": {"sha": "0" * 40},
+            "number": 1,
+            "history": [{"sha": "a" * 12, "date": "d", "number": 2, "summary": "s"}] * 2,
+            "origin": [{"sha": "c" * 12, "date": "d", "number": 3, "summary": "s"}],
+            "origin_term": "fullgraph",
+        }
+    )
+
+    assert out.index("this line has 2 revisions") < out.index("changed `fullgraph`")
+    assert "follows the word, not the line" in out
+
+
+def test_the_words_it_tried_are_presentation_not_fact() -> None:
+    """The candidate list is for the person judging the choice. Facts are never
+    presentation, but this is working, and a piped caller pays for every line forever."""
+    payload = {
+        "blame": {"sha": "0" * 40},
+        "number": 1,
+        "origin": [{"sha": "c" * 12, "date": "d", "number": 3, "summary": "s"}],
+        "origin_term": "fullgraph",
+        "origin_considered": [
+            {"term": "renamed_thing", "commits": 1},
+            {"term": "fullgraph", "commits": 7},
+        ],
+    }
+
+    assert "tried:" not in render_why(payload)
+    assert "renamed_thing=1" in render_why(payload, presentation=True)
+
+
 # -- whose words are they --------------------------------------------------
 
 

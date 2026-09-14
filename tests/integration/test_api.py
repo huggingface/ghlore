@@ -161,6 +161,53 @@ def test_a_page_that_used_no_filters_carries_none(
     assert payload["query"]["since"] is None
 
 
+# -- a date, not only an age (huggingface/relore#66) -----------------------
+
+
+def test_a_hit_carries_the_date_its_age_was_rendered_from(
+    engine: Engine, fake: FakeGitHub, client: TestClient
+) -> None:
+    """The age is for reading and stays in the text; this is for citing, and it is the one
+    thing an agent asked for "the comment, with its author and its date" could not give.
+    A careful one then bounds the date from a merge commit and says so; a less careful one
+    states the inferred month as a fact."""
+    fake.add_issue(1, body="a crash in the decoder")
+    _index(engine, fake, 1)
+
+    (hit, *_) = _search(client, query="crash decoder")["hits"]
+
+    assert hit["age"], "still rendered"
+    assert hit["date"].endswith("Z"), "UTC, to the second, comparable with the GitHub API"
+    assert "." not in hit["date"], "no microseconds"
+
+
+def test_the_rendered_page_gains_no_timestamp(
+    engine: Engine, fake: FakeGitHub, client: TestClient
+) -> None:
+    """Both, on different surfaces. A bare timestamp in the text makes a model do
+    arithmetic it will skip -- and every line costs the caller tokens forever (section 6's
+    caps), so the fix for a JSON gap must not be paid for on the page."""
+    fake.add_issue(1, body="a crash in the decoder")
+    _index(engine, fake, 1)
+    payload = _search(client, query="crash decoder")
+
+    rendered = render_search(payload)
+
+    assert payload["hits"][0]["date"] not in rendered
+
+
+def test_a_thread_carries_its_own_date(
+    engine: Engine, fake: FakeGitHub, client: TestClient
+) -> None:
+    fake.add_issue(1, body="a crash in the decoder")
+    _index(engine, fake, 1)
+
+    payload = client.get("/api/v1/thread/1", params={"repo": REPO}).json()
+
+    assert payload["thread"]["age"]
+    assert payload["thread"]["date"].endswith("Z")
+
+
 # -- the envelope ----------------------------------------------------------
 
 

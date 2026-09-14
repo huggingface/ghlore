@@ -527,6 +527,30 @@ tells the two apart and says which), and `relore map` with no provider installed
 walk zero files and return an empty map at exit 0 — a missing install wearing a real
 answer, which is what `registry.require_any` exists for.
 
+**An age is for reading; a date is for citing, and the page owes both.** Every comment,
+review and hit renders `8mo`, `15mo` — right for a reader, and not enough to *quote*, which
+is what an agent is asked for ("the decisive comment, with its author and its date"). With
+only an age a careful agent bounds the date from a merge commit and says it did; a less
+careful one states the inferred month as fact. So `--json` carries `date` next to `age`
+everywhere (`render_stamp`, relore#66) and the rendered text is unchanged — a bare timestamp
+in the text makes a model do arithmetic it will skip, and every line costs the caller tokens
+forever. `why`'s revision rows had carried a date since #57, so the page was inconsistent
+with itself.
+
+**`why` answers the whole question or says what it could not.** Blame names one commit;
+the revision chain (#57) names the line's; and **the origin chain** names the *word's* —
+`git log -S`, because a revision chain follows a range and loses a block that was rewritten
+rather than moved, which is the common case. Measured: four agent runs reached
+`generation/utils.py:2301`, got eight revisions that all postdate #37866, and each one left
+the verb and ran the pickaxe by hand. The term is chosen by what it finds and both obvious
+rules fail — rarest word picks the rename that arrived with blame's own commit, deepest
+history picks `compile` and `cache` — so it is *the most distinctive word that reaches
+further back than the line already does*, with the candidates and their depths printed under
+`--presentation`. Two lists, never merged: a reader who cannot tell them apart cannot tell
+"reformatted eight times" from "argued here". And both are printed even when blame's commit
+resolves to no indexed pull request, which is the page that used to return on the apology
+and throw them away.
+
 **An empty page is a turn spent saying nothing, everywhere it can still happen.** Three
 fixes, one rule. Inside a thread `--focus` now orders and never selects (below). Corpus-wide,
 a prose query whose terms AND to nothing is asked again with them **disjoined** and the page

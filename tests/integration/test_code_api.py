@@ -20,6 +20,7 @@ from relore.api.tokens import Authenticator, Token
 from relore.code.blame import blame_line
 from relore.code.clone import CLONE_ARGS
 from relore.ingest.index_thread import index_thread
+from relore.render import render_why
 from relore.store import schema as s
 from relore.wire import CLIENT_HEADER
 
@@ -195,6 +196,45 @@ def test_a_query_never_fetches_from_the_remote(monkeypatch, clone_root) -> None:
     blame_line(f"{clone_root}/{REPO.replace('/', '__')}", "src/modeling_llama.py", 2)
 
     assert seen["GIT_NO_LAZY_FETCH"] == "1"
+
+
+def test_why_carries_the_origin_chain_and_the_word_it_pickaxed(client) -> None:
+    """The composed answer (huggingface/relore#57). `git log -L` follows a range and loses a
+    rewritten block; this follows a word. Both lists are on the page, separately, and the
+    word is named so the choice can be argued with rather than taken."""
+    payload = client.get("/api/v1/why", params={"path": "src/modeling_llama.py", "line": 2}).json()
+
+    assert "origin" in payload
+    assert payload["origin_term"] == "" or payload["origin_term"]
+    # Whatever it found or did not, it says what it tried: a silent absence and "there was
+    # nothing to find" are the two answers this verb keeps having to tell apart.
+    assert [c["term"] for c in payload["origin_considered"]]
+
+
+def test_the_origin_chain_renders_as_a_different_question_from_the_revisions(client) -> None:
+    """A reader who cannot tell them apart cannot tell "this line was reformatted eight
+    times" from "this behaviour was argued here"."""
+    payload = client.get("/api/v1/why", params={"path": "src/modeling_llama.py", "line": 2}).json()
+    payload["origin_term"] = "partial_rotary_factor"
+    payload["origin"] = [{"sha": "abc123abc123", "date": "2024-03-06", "summary": "origin (#7)"}]
+
+    out = render_why(payload)
+
+    assert "changed `partial_rotary_factor` in this file" in out
+    assert "follows the word, not the line" in out
+
+
+def test_a_review_comment_carries_a_date_and_not_only_an_age(client, engine, fake) -> None:
+    """huggingface/relore#66. `why` is the verb most often asked for "the comment, with its
+    author and its date", and its own revision rows have carried a date since #57 -- so
+    without this the page was inconsistent with itself, and an agent bounded the date from
+    the merge commit and said so."""
+    payload = client.get("/api/v1/why", params={"path": "src/modeling_llama.py", "line": 2}).json()
+
+    for group in ("anchored", "on_file", "reviews"):
+        for entry in payload.get(group) or []:
+            assert "age" in entry, "the age is what the page prints"
+            assert "date" in entry, "and this is what a citation needs"
 
 
 def test_why_on_a_line_that_is_not_there_says_blame_has_nothing_to_read(client) -> None:

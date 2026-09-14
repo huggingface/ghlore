@@ -511,6 +511,50 @@ def _path_shape(paths: list[str]) -> str:
     return ", ".join(parts)
 
 
+def _chains(payload: dict[str, Any], *, presentation: bool = False) -> list[str]:
+    """The two histories behind a line, as two lists that never merge.
+
+    They answer different questions and a reader who cannot tell them apart cannot tell
+    "this line was reformatted eight times" from "this behaviour was argued here". The
+    revision chain follows the *range* and loses a block that was rewritten; the origin
+    chain follows a *word* and loses one that was renamed. Neither is provenance, both are
+    evidence, and the word is printed so the choice can be argued with rather than taken.
+    """
+    lines: list[str] = []
+    history = payload.get("history") or []
+    if len(history) > 1:
+        # Blame is this list's first row, not the answer (relore#57). The rest is what a
+        # reader has to see to know the top one is a refactor rather than a decision.
+        lines += ["", f"-- this line has {len(history)} revisions, newest first --"]
+        for commit in history:
+            mark = f"#{commit['number']}" if commit.get("number") else "no pull request indexed"
+            lines.append(f"   {str(commit.get('sha', ''))[:12]}  {commit.get('date')}  {mark}")
+            lines.append(quote(str(commit.get("summary", ""))))
+
+    origin = payload.get("origin") or []
+    if origin:
+        term = payload.get("origin_term") or "?"
+        lines += [
+            "",
+            f"-- {len(origin)} commit(s) changed `{term}` in this file, newest first. "
+            "This follows the word, not the line, so it reaches a block that was rewritten "
+            "rather than moved --",
+        ]
+        for commit in origin:
+            mark = f"#{commit['number']}" if commit.get("number") else "no pull request indexed"
+            lines.append(f"   {str(commit.get('sha', ''))[:12]}  {commit.get('date')}  {mark}")
+            lines.append(quote(str(commit.get("summary", ""))))
+        if presentation:
+            considered = payload.get("origin_considered") or []
+            if considered:
+                lines.append(
+                    "   (tried: "
+                    + ", ".join(f"{c.get('term')}={c.get('commits')}" for c in considered)
+                    + f"; `{term}` reached furthest back without filling the page)"
+                )
+    return lines
+
+
 def render_why(
     payload: dict[str, Any], *, compact: bool = False, presentation: bool = False
 ) -> str:
@@ -539,6 +583,11 @@ def render_why(
             "it is not retrievable here. It may predate the index, or have reached the "
             "branch outside a pull request."
         )
+        # The chains, still -- and especially here. This branch used to return on that
+        # sentence, which threw away both of them on the one page where they are the whole
+        # remaining recourse: blame's own commit is unresolvable, and a revision or a
+        # pickaxe hit that *is* indexed is the only way left in.
+        lines += _chains(payload, presentation=presentation)
         return envelope("\n".join(lines).rstrip(), compact=compact)
 
     guessed = (
@@ -556,15 +605,7 @@ def render_why(
     if thread.get("links"):
         lines.append("links: " + ", ".join(_link(link) for link in thread["links"]))
 
-    history = payload.get("history") or []
-    if len(history) > 1:
-        # Blame is this list's first row, not the answer (relore#57). The rest is what a
-        # reader has to see to know the top one is a refactor rather than a decision.
-        lines += ["", f"-- this line has {len(history)} revisions, newest first --"]
-        for commit in history:
-            mark = f"#{commit['number']}" if commit.get("number") else "no pull request indexed"
-            lines.append(f"   {str(commit.get('sha', ''))[:12]}  {commit.get('date')}  {mark}")
-            lines.append(quote(str(commit.get("summary", ""))))
+    lines += _chains(payload, presentation=presentation)
 
     anchored = payload.get("anchored") or []
     lines += ["", f"-- {len(anchored)} review comment(s) on this line while it was written --"]
