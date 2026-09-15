@@ -33,8 +33,8 @@ jobs:
     env:
       RELORE_TEST_POSTGRES_URL: postgresql://postgres:test@localhost:5432/relore_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       # One code path with local development: make builds the venv and runs ruff + pytest.
